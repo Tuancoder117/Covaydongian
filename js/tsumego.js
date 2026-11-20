@@ -14,7 +14,13 @@ class TsumegoModule {
         this.problems = this.getDefaultProblems();
         this.currentProblem = null;
         this.isBotThinking = false;
-        this.solvedIds = new Set(JSON.parse(localStorage.getItem('cvdgl_solved_tsumego') || '[]'));
+        // Dữ liệu lưu cũ có thể bị hỏng hoặc localStorage bị trình duyệt chặn.
+        try {
+            const savedSolvedIds = JSON.parse(localStorage.getItem('cvdgl_solved_tsumego') || '[]');
+            this.solvedIds = new Set(Array.isArray(savedSolvedIds) ? savedSolvedIds : []);
+        } catch (error) {
+            this.solvedIds = new Set();
+        }
 
         this.bindEvents();
         this.applySettings(settings);
@@ -40,7 +46,11 @@ class TsumegoModule {
 
     saveSettings(partial = {}) {
         const next = { ...this.getSettings(), ...partial };
-        localStorage.setItem('cvdgl_tsumego_settings', JSON.stringify(next));
+        try {
+            localStorage.setItem('cvdgl_tsumego_settings', JSON.stringify(next));
+        } catch (error) {
+            // Vẫn áp dụng cài đặt trong phiên hiện tại nếu không thể lưu.
+        }
         this.applySettings(next);
     }
 
@@ -334,7 +344,11 @@ class TsumegoModule {
 
         const explanation = this.currentProblem.explanations[key] || 'Nước đi chính xác!';
         this.solvedIds.add(this.currentProblem.id);
-        localStorage.setItem('cvdgl_solved_tsumego', JSON.stringify([...this.solvedIds]));
+        try {
+            localStorage.setItem('cvdgl_solved_tsumego', JSON.stringify([...this.solvedIds]));
+        } catch (error) {
+            // Không để lỗi lưu tiến độ làm gián đoạn bài tập.
+        }
         this.syncDailyProgress();
         this.renderProblemList();
 
