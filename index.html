@@ -164,6 +164,35 @@
                 </div>
             </div>
 
+            <section id="tsumego-editor" class="panel tsumego-editor" hidden>
+                <div class="editor-heading"><div><h3>Trình biên tập thế cờ</h3><p>Tạo thế ban đầu, sau đó ghi lần lượt nước người chơi và nước đáp trả của máy.</p></div><button class="btn btn-sec" type="button" onclick="tsumegoEditor.toggle()">Đóng</button></div>
+                <div class="editor-layout">
+                    <div>
+                        <div class="editor-board-wrap"><canvas id="tsumego-editor-board" width="480" height="480"></canvas></div>
+                        <div id="editor-status" class="editor-status">Đang vẽ thế cờ ban đầu</div>
+                        <div id="editor-sequence" class="editor-sequence">Chưa có nước giải nào.</div>
+                    </div>
+                    <div class="editor-controls">
+                        <label>Tên bài tập<input id="editor-title" type="text" placeholder="Ví dụ: Bắt quân ở góc"></label>
+                        <div class="editor-fields">
+                            <label>Kích thước<select id="editor-size"><option value="9">9 × 9</option><option value="13">13 × 13</option><option value="19">19 × 19</option></select></label>
+                            <label>Trình độ<select id="editor-level"><option value="30k-20k">30k–20k</option><option value="19k-10k">19k–10k</option><option value="9k-1d">9k–1d</option></select></label>
+                        </div>
+                        <label>Quân đi trước<select id="editor-turn"><option value="1">Đen</option><option value="2">Trắng</option></select></label>
+                        <label>Công cụ vẽ</label>
+                        <div class="editor-button-row"><button type="button" class="btn btn-sec active" data-editor-tool="setup">Đặt quân</button><button type="button" class="btn btn-sec" data-editor-tool="player">Nước người chơi</button><button type="button" class="btn btn-sec" data-editor-tool="reply">Nước máy</button></div>
+                        <div class="editor-button-row"><button type="button" class="btn btn-sec active" data-editor-color="1">Quân Đen</button><button type="button" class="btn btn-sec" data-editor-color="2">Quân Trắng</button><label class="editor-check"><input type="checkbox" id="editor-erase"> Tẩy quân</label></div>
+                        <div class="editor-button-row"><button type="button" class="btn btn-sec" id="editor-add-step">Thêm bước</button><button type="button" class="btn btn-sec" id="editor-skip-reply">Không có nước máy</button></div>
+                        <label>Ghi chú cho bước đang tạo<input id="editor-step-note" type="text" placeholder="Giải thích nước đi"></label>
+                        <div class="editor-button-row"><button type="button" class="btn btn-sec" id="editor-undo">Hoàn tác</button><button type="button" class="btn btn-sec" id="editor-clear">Xóa bàn</button></div>
+                        <label>Gợi ý<textarea id="editor-hint" rows="2" placeholder="Gợi ý cho người học"></textarea></label>
+                        <label>Mô tả<textarea id="editor-description" rows="2" placeholder="Mô tả thế cờ"></textarea></label>
+                        <button type="button" class="btn btn-pri" id="editor-save">Lưu bài tập</button>
+                        <label>Sửa bài đã tạo<select id="editor-edit-select"><option value="">— Chọn bài tự tạo để sửa —</option></select></label>
+                        <div class="editor-button-row"><button type="button" class="btn btn-sec" id="editor-export">Xuất JSON</button><label class="btn btn-sec editor-import">Nhập JSON<input id="editor-import" type="file" accept=".json,application/json" hidden></label></div>
+                    </div>
+                </div>
+            </section>
             <div class="workspace-grid tsumego-workspace-grid">
                 <div class="panel">
                     <div class="problem-list" id="tsumego-problem-list"></div>
@@ -211,6 +240,7 @@
 
         <script src="js/go-engine.js"></script>
         <script src="js/tsumego.js"></script>
+        <script src="js/tsumego-editor.js"></script>
         <script src="js/app.js"></script>
         <script>
             // Lời chào theo giờ + bàn cờ mini trang trí trên menu
