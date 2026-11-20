@@ -1,9 +1,12 @@
 // Khởi tạo bàn cờ học luật 9x9
 const learnBoard = new GoBoardEngine('learn-board', 9, {
-    onMove: (moveData) => handleLessonMove(moveData)
+    onMove: (moveData) => handleLessonMove(moveData),
+    // Nước đi bị từ chối (ô có quân, tự sát, Ko...) -> báo lý do cho người học, không reset bàn
+    onInvalid: (reason) => showLessonFeedback(reason, 'error')
 });
 
 let currentLessonIndex = 0;
+let lessonResetTimer = null; // Hẹn giờ tự hoàn tác nước sai (phải hủy khi đổi bài)
 const completedLessons = new Set();
 
 // Dữ liệu 5 bài học cốt lõi cho người mới bắt đầu
@@ -92,7 +95,9 @@ const LESSONS = [
             if (move.x === 4 && move.y === 4) {
                 learnBoard.markers = [];
                 learnBoard.draw();
-                return { success: true, msg: "Chuẩn xác! Ba quân Trắng đã nối liền thành một khối vững chắc với tận 7 khí." };
+                // Tính số khí thật của khối vừa nối thay vì ghi cứng (khối này có 5 khí)
+                const libs = learnBoard.getGroupAndLiberties(4, 4).liberties.size;
+                return { success: true, msg: `Chuẩn xác! Ba quân Trắng đã nối liền thành một khối vững chắc với tận ${libs} khí.` };
             }
             return { success: false, msg: "Hãy đặt quân Trắng vào điểm giao ở giữa (chấm xanh) để nối 2 quân Trắng lại với nhau." };
         }
@@ -156,24 +161,18 @@ const LESSONS = [
 
 // Chuyển đổi giữa 4 Tab chính của Website
 function switchTab(tabName) {
+    const target = document.getElementById(`tab-${tabName}`);
+    if (!target) return; // Tên tab không tồn tại: giữ nguyên màn hình hiện tại, không để trắng trang
+
     document.getElementById('home-menu')?.classList.remove('active');
     document.querySelectorAll('.workspace-section, .tab-section').forEach(sec => {
         sec.classList.remove('active');
     });
-
-    const target = document.getElementById(`tab-${tabName}`);
-    if (target) {
-        target.classList.add('active');
-    }
+    target.classList.add('active');
 
     if (tabName === 'tsumego' && typeof initTsumegoIfNeeded === 'function') {
         initTsumegoIfNeeded();
-        if (tsumegoApp) {
-            tsumegoApp.renderProblemList();
-            if (!tsumegoApp.currentProblem && tsumegoApp.problems.length > 0) {
-                tsumegoApp.selectProblem(tsumegoApp.problems[0].id);
-            }
-        }
+        if (tsumegoApp) tsumegoApp.onTabShown();
     }
 }
 // Render danh sách nút chọn bài học
@@ -189,6 +188,11 @@ function renderLessonSteps() {
 
 // Tải nội dung bài học
 function loadLesson(index) {
+    // Hủy hẹn giờ hoàn tác của bài trước, nếu không nó sẽ ghi đè bàn cờ của bài mới
+    if (lessonResetTimer) {
+        clearTimeout(lessonResetTimer);
+        lessonResetTimer = null;
+    }
     currentLessonIndex = index;
     const lesson = LESSONS[index];
 
@@ -201,29 +205,41 @@ function loadLesson(index) {
     feedback.textContent = '';
 
     lesson.setup();
+    learnBoard.setInteractive(true);
     updateBoardStatus();
     renderLessonSteps();
 }
 
-function handleLessonMove(moveData) {
-    updateBoardStatus();
-    const lesson = LESSONS[currentLessonIndex];
-    const result = lesson.checkWin(moveData);
-
+// Hiện thông báo trong khung phản hồi của bài học (type: 'success' | 'error')
+function showLessonFeedback(msg, type) {
     const feedback = document.getElementById('lesson-feedback');
     feedback.classList.remove('hidden', 'success', 'error');
+    feedback.classList.add(type);
+    feedback.textContent = msg;
+}
+
+function handleLessonMove(moveData) {
+    updateBoardStatus();
+    const lessonIndex = currentLessonIndex;
+    const lesson = LESSONS[lessonIndex];
+    const result = lesson.checkWin(moveData);
+
+    showLessonFeedback(result.msg, result.success ? 'success' : 'error');
+
+    // Khóa bàn cờ: sau khi xong bài (hoặc trong lúc chờ hoàn tác) không nhận thêm nước đi,
+    // tránh việc bấm thêm làm hỏng kết quả vừa đạt được
+    learnBoard.setInteractive(false);
 
     if (result.success) {
-        feedback.classList.add('success');
-        feedback.textContent = result.msg;
-        completedLessons.add(currentLessonIndex);
+        completedLessons.add(lessonIndex);
         renderLessonSteps();
     } else {
-        feedback.classList.add('error');
-        feedback.textContent = result.msg;
         // Tự động hoàn tác nước đi sai sau 0.8s để người học thử lại
-        setTimeout(() => {
+        lessonResetTimer = setTimeout(() => {
+            lessonResetTimer = null;
+            if (currentLessonIndex !== lessonIndex) return; // Đã chuyển sang bài khác
             lesson.setup();
+            learnBoard.setInteractive(true);
             updateBoardStatus();
         }, 800);
     }
@@ -251,5 +267,7 @@ function nextLesson() {
 // Khởi chạy bài học đầu tiên khi mở trang
 window.addEventListener('DOMContentLoaded', () => {
     loadLesson(0);
+    // Khởi tạo module bài tập đúng 1 lần để tiến độ "Buổi tập hôm nay" hiện ngay trên trang chủ
+    if (typeof initTsumegoIfNeeded === 'function') initTsumegoIfNeeded();
 });
 

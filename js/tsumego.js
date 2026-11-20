@@ -2,55 +2,77 @@
  * TsumegoModule - Luyện sống chết & hình cờ
  * Hỗ trợ bài mẫu theo cấp độ + đọc file .SGF + buổi tập hằng ngày + cài đặt giao diện
  */
+
+const TSUMEGO_STORAGE = {
+    solved: 'cvdgl_solved_tsumego',
+    settings: 'cvdgl_tsumego_settings',
+    daily: 'cvdgl_daily_progress'
+};
+
+// localStorage có thể bị chặn (chế độ riêng tư) hoặc chứa dữ liệu hỏng -> luôn bọc try/catch
+function storageGetJSON(key, fallback) {
+    try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+    } catch (e) {
+        return fallback;
+    }
+}
+
+function storageSetJSON(key, value) {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) { /* bỏ qua: bộ nhớ đầy hoặc bị chặn */ }
+}
+
+// Thoát ký tự HTML: tiêu đề bài (nhất là từ file SGF của người khác) không được phép chèn mã
+function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+}
+
 class TsumegoModule {
     constructor(canvasId) {
+        this.isBotThinking = false;
+        this.pendingTimer = null; // Hẹn giờ hoàn tác nước sai / nước đáp trả của máy
+
         this.board = new GoBoardEngine(canvasId, 9, {
             interactive: true,
-            onMove: (move) => this.handlePlayerMove(move)
+            onMove: (move) => this.handlePlayerMove(move),
+            // Nước đi bị từ chối (ô có quân, tự sát, Ko...) -> báo lý do cho người học
+            onInvalid: (reason) => {
+                if (!this.isBotThinking) this.setFeedback(reason, 'error');
+            }
         });
 
         const settings = this.getSettings();
         this.currentLevelFilter = settings.defaultLevel || 'all';
         this.problems = this.getDefaultProblems();
         this.currentProblem = null;
-        this.isBotThinking = false;
-        // Dữ liệu lưu cũ có thể bị hỏng hoặc localStorage bị trình duyệt chặn.
-        try {
-            const savedSolvedIds = JSON.parse(localStorage.getItem('cvdgl_solved_tsumego') || '[]');
-            this.solvedIds = new Set(Array.isArray(savedSolvedIds) ? savedSolvedIds : []);
-        } catch (error) {
-            this.solvedIds = new Set();
-        }
+
+        const solved = storageGetJSON(TSUMEGO_STORAGE.solved, []);
+        this.solvedIds = new Set(Array.isArray(solved) ? solved : []);
 
         this.bindEvents();
         this.applySettings(settings);
         this.syncFilterButtons();
-        this.renderProblemList();
-
-        if (this.problems.length > 0) {
-            this.selectProblem(this.problems[0].id);
-        }
+        this.onTabShown(); // Vẽ danh sách + chọn bài đầu tiên của nhóm đang lọc
         this.syncDailyProgress();
     }
 
     getSettings() {
-        try {
-            return JSON.parse(localStorage.getItem('cvdgl_tsumego_settings')) || {
-                theme: 'kaya',
-                defaultLevel: 'all'
-            };
-        } catch (e) {
-            return { theme: 'kaya', defaultLevel: 'all' };
-        }
+        const saved = storageGetJSON(TSUMEGO_STORAGE.settings, null);
+        return {
+            theme: 'kaya',
+            defaultLevel: 'all',
+            ...(saved && typeof saved === 'object' ? saved : {})
+        };
     }
 
     saveSettings(partial = {}) {
         const next = { ...this.getSettings(), ...partial };
-        try {
-            localStorage.setItem('cvdgl_tsumego_settings', JSON.stringify(next));
-        } catch (error) {
-            // Vẫn áp dụng cài đặt trong phiên hiện tại nếu không thể lưu.
-        }
+        storageSetJSON(TSUMEGO_STORAGE.settings, next);
         this.applySettings(next);
     }
 
@@ -64,6 +86,8 @@ class TsumegoModule {
         document.querySelectorAll('.canvas-wrapper').forEach(wrap => {
             wrap.style.background = bg;
         });
+        // Bàn cờ tự vẽ nền gỗ lên canvas nên phải đổi màu ở cả engine thì theme mới có tác dụng
+        this.board.setBoardColor(bg);
     }
 
     syncFilterButtons() {
@@ -72,6 +96,56 @@ class TsumegoModule {
         });
     }
 
+    getFilteredProblems() {
+        return this.currentLevelFilter === 'all'
+            ? this.problems
+            : this.problems.filter(p => p.level === this.currentLevelFilter);
+    }
+
+    // Gọi mỗi khi mở tab / đổi bộ lọc: đảm bảo danh sách và bài đang mở luôn khớp bộ lọc
+    onTabShown() {
+        const list = this.getFilteredProblems();
+        const currentInList = this.currentProblem && list.some(p => p.id === this.currentProblem.id);
+        if (list.length > 0 && !currentInList) {
+            this.selectProblem(list[0].id); // selectProblem đã vẽ lại danh sách
+        } else {
+            this.renderProblemList();
+        }
+    }
+
+    // ---------- Ngày & tiến độ hằng ngày ----------
+
+    // Ngày theo giờ địa phương (toISOString() trả về giờ UTC nên sẽ sang ngày mới lệch 7 tiếng ở Việt Nam)
+    todayKey() {
+        const d = new Date();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${d.getFullYear()}-${mm}-${dd}`;
+    }
+
+    // Tập id các bài đã giải TRONG HÔM NAY
+    loadDailySolved() {
+        const saved = storageGetJSON(TSUMEGO_STORAGE.daily, null);
+        if (saved && saved.date === this.todayKey() && Array.isArray(saved.ids)) {
+            return new Set(saved.ids);
+        }
+        return new Set();
+    }
+
+    markSolved(id) {
+        this.solvedIds.add(id);
+        storageSetJSON(TSUMEGO_STORAGE.solved, [...this.solvedIds]);
+
+        const today = this.loadDailySolved();
+        today.add(id);
+        storageSetJSON(TSUMEGO_STORAGE.daily, { date: this.todayKey(), ids: [...today] });
+
+        this.syncDailyProgress();
+        this.renderProblemList();
+    }
+
+    // ---------- SGF ----------
+
     sgfCoordToXY(coord) {
         if (!coord || coord.length < 2) return null;
         const x = coord.charCodeAt(0) - 97;
@@ -79,64 +153,112 @@ class TsumegoModule {
         return { x, y };
     }
 
-    parseSGF(sgfText, fileName = 'Bài SGF') {
-        const clean = sgfText.replace(/\r?\n/g, '');
-        const szMatch = clean.match(/SZ\[(\d+)\]/);
-        const size = szMatch ? parseInt(szMatch[1], 10) : 9;
+    // Mã băm ngắn từ nội dung file -> id ổn định (tải lại cùng file vẫn nhớ trạng thái đã giải, không bị nhân đôi)
+    hashString(str) {
+        let h = 5381;
+        for (let i = 0; i < str.length; i++) {
+            h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+        }
+        return (h >>> 0).toString(36);
+    }
 
+    parseSGF(sgfText, fileName = 'Bài SGF') {
+        const text = String(sgfText || '');
+
+        const szMatch = text.match(/SZ\s*\[\s*(\d+)/);
+        let size = szMatch ? parseInt(szMatch[1], 10) : 9;
+        if (!(size >= 5 && size <= 19)) size = 9;
+
+        // Quân đặt sẵn: gom MỌI khối AB[..][..] / AW[..][..] (cho phép khoảng trắng/xuống dòng giữa các tọa độ)
         const stones = [];
         const addColor = (tag, color) => {
-            const regex = new RegExp(`${tag}(\\[[a-s]{2}\\])+`, 'g');
-            const blockMatch = clean.match(regex);
-            if (!blockMatch) return;
-            const coords = [...blockMatch[0].matchAll(/\[([a-s]{2})\]/g)];
-            coords.forEach(m => {
-                const pt = this.sgfCoordToXY(m[1]);
-                if (pt) stones.push({ x: pt.x, y: pt.y, color });
-            });
+            const blockRe = new RegExp(`(?:^|[^A-Za-z])${tag}((?:\\s*\\[[a-s]{2}\\])+)`, 'g');
+            for (const block of text.matchAll(blockRe)) {
+                for (const m of block[1].matchAll(/\[([a-s]{2})\]/g)) {
+                    const pt = this.sgfCoordToXY(m[1]);
+                    if (pt) stones.push({ x: pt.x, y: pt.y, color });
+                }
+            }
         };
-
         addColor('AB', 1);
         addColor('AW', 2);
 
-        const plMatch = clean.match(/PL\[(B|W)\]/);
-        const turn = plMatch && plMatch[1] === 'W' ? 2 : 1;
+        // Bên đi trước: ưu tiên PL[..]; nếu thiếu thì lấy màu của nước đi đầu tiên trong file
+        const plMatch = text.match(/PL\s*\[\s*(B|W)\s*\]/i);
+        let turn = plMatch ? (plMatch[1].toUpperCase() === 'W' ? 2 : 1) : 0;
 
-        const moveMatches = [...clean.matchAll(/;(B|W)\[([a-s]{2})\](?:N\[([^\]]*)\]|C\[([^\]]*)\])?/g)];
-        const replies = {};
-        const winMoves = [];
-        const explanations = {};
+        // Đọc cây nước đi: ";" là một nút kèm thuộc tính, "(" ")" mở/đóng nhánh biến.
+        // Đáp án = các nước ĐẦU TIÊN của người giải (chưa có nước nào của họ trước đó trên nhánh),
+        // nước đáp trả = nước đối thủ đi ngay sau đó (nhánh chính). Các nước sâu hơn trong chuỗi
+        // không được coi là đáp án của nước đi đầu.
+        const tokens = text.match(/\(|\)|;(?:\s*[A-Z]+(?:\s*\[(?:\\[\s\S]|[^\]\\])*\])+)*/g) || [];
+        const unescape = (s) => s.replace(/\\([\]\\])/g, '$1');
+        const path = [];
+        const stack = [];
+        const firstMoves = [];
+        let pending = null; // Nước đúng đang chờ tìm nước đáp trả
 
-        for (let i = 0; i < moveMatches.length; i++) {
-            const [, who, coord, , comment] = moveMatches[i];
+        for (const tok of tokens) {
+            if (tok === '(') {
+                stack.push(path.length);
+                continue;
+            }
+            if (tok === ')') {
+                path.length = stack.length ? stack.pop() : 0;
+                pending = null;
+                continue;
+            }
+
+            const props = {};
+            for (const pm of tok.matchAll(/([A-Z]+)((?:\s*\[(?:\\[\s\S]|[^\]\\])*\])+)/g)) {
+                props[pm[1]] = [...pm[2].matchAll(/\[((?:\\[\s\S]|[^\]\\])*)\]/g)].map(v => v[1]);
+            }
+            const color = props.B ? 1 : (props.W ? 2 : 0);
+            const coord = color ? (props.B || props.W)[0] : '';
+            if (!color || !/^[a-s]{2}$/.test(coord)) continue; // Nút gốc, chú thích, hoặc nước "pass"
             const pt = this.sgfCoordToXY(coord);
-            if (!pt) continue;
             const key = `${pt.x},${pt.y}`;
-            const moverColor = who === 'B' ? 1 : 2;
 
-            if (moverColor === turn) {
-                winMoves.push(key);
-                if (comment) explanations[key] = comment;
+            if (!turn) turn = color;
 
-                if (i + 1 < moveMatches.length) {
-                    const next = moveMatches[i + 1];
-                    const nextColor = next[1] === 'B' ? 1 : 2;
-                    const nextPt = this.sgfCoordToXY(next[2]);
-                    if (nextColor !== turn && nextPt) {
-                        replies[key] = nextPt;
-                    }
+            if (pending) {
+                if (color !== turn && !pending.reply) pending.reply = pt;
+                pending = null;
+            }
+
+            const isFirstSolverMove = color === turn && !path.some(m => m.color === turn);
+            path.push({ color, key });
+
+            if (isFirstSolverMove) {
+                let cand = firstMoves.find(c => c.key === key);
+                if (!cand) {
+                    cand = { key, comment: props.C ? unescape(props.C[0]) : '', reply: null };
+                    firstMoves.push(cand);
                 }
+                pending = cand.reply ? null : cand;
             }
         }
 
-        const titleMatch = clean.match(/GN\[([^\]]+)\]/);
+        const winMoves = firstMoves.map(c => c.key);
+        const replies = {};
+        const explanations = {};
+        firstMoves.forEach(c => {
+            if (c.reply) replies[c.key] = c.reply;
+            if (c.comment) explanations[c.key] = c.comment;
+        });
+
+        const titleMatch = text.match(/GN\s*\[((?:\\[\s\S]|[^\]\\])*)\]/);
+        const title = titleMatch && titleMatch[1].trim()
+            ? unescape(titleMatch[1].trim())
+            : fileName.replace(/\.sgf$/i, '');
+
         return {
-            id: 'sgf-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-            title: titleMatch ? titleMatch[1] : fileName.replace(/\.sgf$/i, ''),
+            id: 'sgf-' + this.hashString(text),
+            title,
             level: 'sgf',
             levelLabel: 'File SGF',
             size,
-            turn,
+            turn: turn || 1,
             hintText: 'Tìm điểm then chốt cắt khí hoặc nối quân tạo 2 mắt.',
             stones,
             winMoves,
@@ -145,78 +267,116 @@ class TsumegoModule {
         };
     }
 
+    // Kiểm tra bài SGF có dùng được không: cần có hình cờ và có lời giải để chấm
+    buildSGFProblem(sgfText, fileName) {
+        const parsed = this.parseSGF(sgfText, fileName);
+        if (parsed.stones.length === 0) {
+            return { error: 'File không có hình cờ hợp lệ (thiếu AB/AW).' };
+        }
+        if (parsed.winMoves.length === 0) {
+            return { error: 'File không có lời giải (thiếu nước đi B[..]/W[..]) nên không thể chấm bài.' };
+        }
+        return { problem: parsed };
+    }
+
+    // Thêm bài vào danh sách; nếu đã có bài cùng id (cùng nội dung) thì dùng lại, không nhân đôi
+    insertProblem(parsed, atEnd = false) {
+        const existing = this.problems.find(p => p.id === parsed.id);
+        if (existing) return existing;
+        if (atEnd) this.problems.push(parsed);
+        else this.problems.unshift(parsed);
+        return parsed;
+    }
+
+    importSGFText(sgfText, fileName, successMsg) {
+        const { problem, error } = this.buildSGFProblem(sgfText, fileName);
+        if (error) {
+            this.setFeedback(error, 'error');
+            return false;
+        }
+        const added = this.insertProblem(problem);
+        this.currentLevelFilter = 'all';
+        this.syncFilterButtons();
+        this.selectProblem(added.id);
+        this.setFeedback(successMsg || `Đã thêm bài "${added.title}" thành công!`, 'success');
+        return true;
+    }
+
+    // ---------- Dữ liệu bài mẫu ----------
+
     getDefaultProblems() {
-        const make = (id,title,level,label,turn,stones,sequence,hintText,description) => ({
-            id,title,level,levelLabel:label,size:9,turn,stones,sequence,hintText,description,
-            winMoves:sequence.map(s=>s.move),replies:{},
-            explanations:Object.fromEntries(sequence.map(s=>[s.move,s.explanation]))
-        });
         return [
-            make('begin-01','Bịt khí ở cạnh bàn','30k-20k','30k – 20k',1,
-                [{x:1,y:1,color:2},{x:0,y:1,color:1},{x:2,y:1,color:1}],
-                [{move:'1,0',reply:null,explanation:'Đen lấp khí cuối cùng và bắt quân Trắng.'}],
-                'Quân Trắng sát góc chỉ còn một khí.','Bài một nước: nhận biết khí cuối cùng.'),
-            make('begin-02','Nối hai quân Đen','30k-20k','30k – 20k',1,
-                [{x:2,y:4,color:1},{x:4,y:4,color:1},{x:3,y:3,color:2}],
-                [{move:'3,4',reply:{x:3,y:5},explanation:'Đen nối thành một nhóm. Máy áp sát từ phía dưới.'},
-                 {move:'2,5',reply:null,explanation:'Nước thứ hai giúp nhóm Đen mở rộng khí và giữ liên kết.'}],
-                'Tìm điểm nối trực tiếp giữa hai quân Đen.','Hai lượt người học, xen giữa là nước đáp trả của máy.'),
-            make('begin-03','Bắt quân trong góc','30k-20k','30k – 20k',1,
-                [{x:0,y:2,color:2},{x:1,y:2,color:1},{x:0,y:3,color:1},{x:1,y:1,color:1}],
-                [{move:'0,1',reply:{x:2,y:0},explanation:'Đen lấp khí cuối cùng và bắt quân ở cạnh. Máy thử mở rộng ở góc.'},
-                 {move:'1,3',reply:null,explanation:'Đen tiếp tục mở rộng vùng kiểm soát ở cạnh.'}],
-                'Khóa đường chạy trước khi bắt quân.','Tập đọc đường thoát của nhóm quân ở góc.'),
-            make('begin-04','Giữ khí cho nhóm quân','30k-20k','30k – 20k',1,
-                [{x:3,y:3,color:1},{x:4,y:3,color:2},{x:3,y:4,color:2}],
-                [{move:'2,3',reply:{x:5,y:3},explanation:'Đen mở thêm một hướng thoát. Máy áp sát nhóm.'},
-                 {move:'2,4',reply:null,explanation:'Bạn đã nối rộng nhóm và tạo thêm khí.'}],
-                'Chọn điểm giúp nhóm Đen có thêm khí.','Thực hành tăng khí bằng cách nối quân.'),
-            make('mid-01','Tạo mắt trong vùng đất','19k-10k','19k – 10k',1,
-                [{x:2,y:2,color:1},{x:3,y:2,color:1},{x:2,y:3,color:1},{x:4,y:2,color:2}],
-                [{move:'3,3',reply:{x:4,y:3},explanation:'Đen chiếm điểm then chốt. Máy thử xâm nhập.'},
-                 {move:'2,4',reply:null,explanation:'Đen củng cố vùng đất và giữ khoảng trống làm mắt.'}],
-                'Điểm then chốt nằm sát nhóm Đen.','Bài hai nước: chiếm điểm sống còn rồi củng cố.'),
-            make('mid-02','Chặn đường chạy của quân Trắng','19k-10k','19k – 10k',1,
-                [{x:4,y:2,color:2},{x:3,y:2,color:1},{x:5,y:2,color:1},{x:4,y:3,color:2}],
-                [{move:'3,3',reply:{x:5,y:3},explanation:'Đen chặn một hướng thoát. Máy tìm đường phía còn lại.'},
-                 {move:'4,4',reply:null,explanation:'Nước thứ hai khóa đường chạy còn lại.'}],
-                'Tính trước hai hướng chạy của quân Trắng.','Tập đọc đường chạy và chặn theo thứ tự.'),
-            make('mid-03','Nối nhóm trước khi bị cắt','19k-10k','19k – 10k',2,
-                [{x:2,y:4,color:2},{x:4,y:4,color:2},{x:3,y:3,color:1}],
-                [{move:'3,4',reply:{x:3,y:5},explanation:'Trắng nối hai nhóm. Máy thử cắt từ phía dưới.'},
-                 {move:'2,5',reply:null,explanation:'Trắng gia cố liên kết và giữ nhóm an toàn.'}],
-                'Bạn cầm Trắng. Hãy nối hai nhóm trước khi Đen cắt.','Bài hai nước dành cho bên Trắng.'),
-            make('mid-04','Đánh vào điểm yếu','19k-10k','19k – 10k',1,
-                [{x:3,y:3,color:2},{x:4,y:3,color:2},{x:5,y:4,color:1},{x:4,y:5,color:1}],
-                [{move:'4,4',reply:{x:3,y:4},explanation:'Đen đánh vào điểm yếu giữa hai quân Trắng. Máy tìm cách nối.'},
-                 {move:'5,3',reply:null,explanation:'Nước thứ hai tiếp tục tách nhóm Trắng và tạo áp lực.'}],
-                'Tìm điểm cắt khiến hai quân Trắng khó hỗ trợ nhau.','Tập chiến thuật cắt và gây áp lực.'),
-            make('adv-01','Đọc trước ba nước khi tấn công','9k-1d','9k – 1d',1,
-                [{x:3,y:3,color:2},{x:4,y:3,color:2},{x:5,y:3,color:2},{x:3,y:4,color:1},{x:5,y:4,color:1}],
-                [{move:'4,4',reply:{x:4,y:5},explanation:'Nước đầu tiên ép nhóm Trắng xuống. Máy đáp trả.'},
-                 {move:'3,5',reply:{x:5,y:5},explanation:'Đen khóa cánh trái; máy tìm cách mở cánh phải.'},
-                 {move:'4,6',reply:null,explanation:'Đen khép vùng vây và duy trì áp lực.'}],
-                'Tính hướng chạy sau mỗi lần đối thủ đáp trả.','Bài ba nước: tấn công theo hướng và giữ thế vây.'),
-            make('adv-02','Cắt và ép nhóm quân','9k-1d','9k – 1d',1,
-                [{x:2,y:3,color:2},{x:3,y:3,color:2},{x:5,y:3,color:2},{x:4,y:2,color:1},{x:4,y:4,color:1}],
-                [{move:'4,3',reply:{x:3,y:4},explanation:'Đen cắt đôi hình cờ. Máy nối về phía trái.'},
-                 {move:'5,4',reply:{x:6,y:3},explanation:'Đen gây sức ép lên nhóm bên phải. Máy tìm đường thoát.'},
-                 {move:'6,4',reply:null,explanation:'Nước thứ ba khóa hướng chạy và hoàn tất chuỗi chiến thuật.'}],
-                'Tìm nước cắt trước, sau đó ép nhóm yếu chạy về phía bất lợi.','Bài ba nước: cắt, đuổi và khóa đường chạy.'),
-            make('adv-03','Tạo mắt giả rồi phá thế','9k-1d','9k – 1d',2,
-                [{x:2,y:2,color:1},{x:3,y:2,color:1},{x:4,y:2,color:1},{x:2,y:3,color:1},{x:4,y:3,color:1},{x:3,y:4,color:2}],
-                [{move:'3,3',reply:{x:1,y:3},explanation:'Trắng chiếm điểm then chốt trong hình. Máy mở rộng biên.'},
-                 {move:'2,4',reply:{x:4,y:4},explanation:'Trắng giữ liên kết và thu hẹp mắt giả. Máy chống đỡ.'},
-                 {move:'3,5',reply:null,explanation:'Trắng đọc đủ chuỗi nước để phá thế phòng thủ.'}],
-                'Bạn cầm Trắng. Chiếm điểm then chốt rồi thu hẹp không gian sống.','Bài ba nước dành cho người chơi muốn đọc sâu.'),
-            make('adv-04','Vây bắt bằng thứ tự chính xác','9k-1d','9k – 1d',1,
-                [{x:3,y:2,color:2},{x:4,y:2,color:2},{x:5,y:2,color:2},{x:3,y:3,color:1},{x:5,y:3,color:1},{x:4,y:4,color:2}],
-                [{move:'4,3',reply:{x:2,y:3},explanation:'Đen đặt nước chặn đầu. Máy thử mở đường cánh trái.'},
-                 {move:'6,3',reply:{x:6,y:2},explanation:'Đen khép cánh phải. Máy tìm cách thoát lên trên.'},
-                 {move:'6,4',reply:null,explanation:'Nước cuối khóa đường thoát và hoàn tất thế vây.'}],
-                'Tính đường chạy của nhóm Trắng và chặn các cửa theo đúng thứ tự.','Bài ba nước: đọc hướng chạy trước khi vây bắt.')
+            {
+                id: 'p1',
+                title: 'Bắt quân góc trên trái',
+                level: '30k-20k',
+                levelLabel: '30k – 20k',
+                size: 9,
+                turn: 1,
+                hintText: 'Quân Trắng chỉ còn 1 khí ở sát mép trên.',
+                stones: [
+                    { x: 1, y: 1, color: 2 },
+                    { x: 0, y: 1, color: 1 },
+                    { x: 1, y: 2, color: 1 },
+                    { x: 2, y: 1, color: 1 }
+                ],
+                winMoves: ['1,0'],
+                replies: {},
+                explanations: {
+                    '1,0': 'Chính xác! Lấp khí cuối cùng bắt gọn quân Trắng.'
+                }
+            },
+            {
+                // Vùng trống bên trong có 3 điểm THẲNG HÀNG: đi điểm giữa -> tách thành 2 mắt đơn -> sống.
+                // (Bản cũ chỉ có 2 điểm trống liền nhau = một mắt hai ô, đi vào đâu cũng tự đặt mình vào thế
+                // bị bắt, nên đáp án "đúng" thực ra làm chết cả khối Đen.)
+                id: 'p2',
+                title: 'Tạo 2 mắt để sống',
+                level: '19k-10k',
+                levelLabel: '19k – 10k',
+                size: 9,
+                turn: 1,
+                hintText: 'Vùng trống bên trong có 3 điểm thẳng hàng. Đi vào điểm chính giữa để chia thành 2 mắt riêng biệt.',
+                stones: [
+                    // Đen: hàng trên cùng, hai cột bên và hàng thứ 3
+                    { x: 0, y: 0, color: 1 }, { x: 1, y: 0, color: 1 }, { x: 2, y: 0, color: 1 }, { x: 3, y: 0, color: 1 }, { x: 4, y: 0, color: 1 },
+                    { x: 0, y: 1, color: 1 }, { x: 4, y: 1, color: 1 },
+                    { x: 0, y: 2, color: 1 }, { x: 1, y: 2, color: 1 }, { x: 2, y: 2, color: 1 }, { x: 3, y: 2, color: 1 }, { x: 4, y: 2, color: 1 },
+                    // Trắng bao vây bên ngoài
+                    { x: 5, y: 0, color: 2 }, { x: 5, y: 1, color: 2 }, { x: 5, y: 2, color: 2 },
+                    { x: 0, y: 3, color: 2 }, { x: 1, y: 3, color: 2 }, { x: 2, y: 3, color: 2 }, { x: 3, y: 3, color: 2 }, { x: 4, y: 3, color: 2 }
+                ],
+                winMoves: ['2,1'],
+                replies: {},
+                explanations: {
+                    '2,1': 'Đúng rồi! Điểm giữa chia vùng trống thành 2 mắt riêng biệt. Trắng không thể đánh vào cả 2 mắt cùng lúc nên khối Đen sống.'
+                }
+            },
+            {
+                id: 'p3',
+                title: 'Phản kích cắt đứt',
+                level: '9k-1d',
+                levelLabel: '9k – 1d',
+                size: 9,
+                turn: 1,
+                hintText: 'Chặn ngay đường nối giữa hai quân Trắng ở khu vực trung tâm.',
+                stones: [
+                    { x: 3, y: 3, color: 2 }, { x: 5, y: 3, color: 2 },
+                    { x: 4, y: 2, color: 2 },
+                    { x: 4, y: 4, color: 1 }, { x: 3, y: 4, color: 1 }, { x: 5, y: 4, color: 1 }
+                ],
+                winMoves: ['4,3'],
+                replies: {
+                    '4,3': { x: 3, y: 2 }
+                },
+                explanations: {
+                    '4,3': 'Nước cắt chuẩn xác! Chia đôi thế liên kết của Trắng.'
+                }
+            }
         ];
     }
+
+    // ---------- Sự kiện ----------
 
     bindEvents() {
         const fileInput = document.getElementById('sgf-file-input');
@@ -226,36 +386,36 @@ class TsumegoModule {
                 if (!file) return;
                 const reader = new FileReader();
                 reader.onload = (ev) => {
-                    const parsed = this.parseSGF(ev.target.result, file.name);
-                    this.problems.unshift(parsed);
-                    this.currentLevelFilter = 'all';
-                    this.syncFilterButtons();
-                    this.renderProblemList();
-                    this.selectProblem(parsed.id);
-                    this.setFeedback(`Đã nạp bài tập từ file "${file.name}".`, 'success');
+                    this.importSGFText(ev.target.result, file.name, `Đã nạp bài tập từ file "${file.name}".`);
                 };
+                reader.onerror = () => this.setFeedback(`Không đọc được file "${file.name}".`, 'error');
                 reader.readAsText(file);
                 e.target.value = '';
             });
         }
+
+        // Bấm vào bài trong danh sách (ủy quyền sự kiện, không phụ thuộc biến toàn cục)
+        const listEl = document.getElementById('tsumego-problem-list');
+        if (listEl) {
+            listEl.addEventListener('click', (e) => {
+                const btn = e.target.closest('.problem-item');
+                if (btn && btn.dataset.id) this.selectProblem(btn.dataset.id);
+            });
+        }
     }
 
-    setLevelFilter(level, btnEl) {
+    setLevelFilter(level) {
         this.currentLevelFilter = level;
         this.saveSettings({ defaultLevel: level });
-        document.querySelectorAll('.tsumego-filter-btn').forEach(b => b.classList.remove('active'));
-        if (btnEl) btnEl.classList.add('active');
-        else this.syncFilterButtons();
-        this.renderProblemList();
+        this.syncFilterButtons();
+        this.onTabShown(); // Nếu bài đang mở không thuộc nhóm mới thì chuyển sang bài đầu của nhóm
     }
 
     renderProblemList() {
         const listEl = document.getElementById('tsumego-problem-list');
         if (!listEl) return;
 
-        const filtered = this.currentLevelFilter === 'all'
-            ? this.problems
-            : this.problems.filter(p => p.level === this.currentLevelFilter);
+        const filtered = this.getFilteredProblems();
 
         if (filtered.length === 0) {
             listEl.innerHTML = `<div class="empty-list">Chưa có bài trong nhóm này. Bạn có thể tải thêm file .SGF.</div>`;
@@ -263,22 +423,31 @@ class TsumegoModule {
         }
 
         listEl.innerHTML = filtered.map(p => {
-            const activeCls = this.currentProblem && this.currentProblem.id === p.id ? 'active' : '';
-            const solvedCls = this.solvedIds.has(p.id) ? 'solved' : '';
+            const isActive = this.currentProblem && this.currentProblem.id === p.id;
+            const solved = this.solvedIds.has(p.id);
             return `
-                <button class="problem-item ${activeCls} ${solvedCls}" onclick="tsumegoApp && tsumegoApp.selectProblem('${p.id}')">
-                    <span class="problem-name">${p.title}</span>
-                    <span class="problem-meta">${p.levelLabel} ${this.solvedIds.has(p.id) ? '· ✓' : ''}</span>
+                <button type="button" class="problem-item ${isActive ? 'active' : ''} ${solved ? 'solved' : ''}" data-id="${escapeHtml(p.id)}">
+                    <span class="problem-name">${escapeHtml(p.title)}</span>
+                    <span class="problem-meta">${escapeHtml(p.levelLabel)} ${solved ? '· ✓' : ''}</span>
                 </button>
             `;
         }).join('');
     }
 
+    cancelPendingTimer() {
+        if (this.pendingTimer) {
+            clearTimeout(this.pendingTimer);
+            this.pendingTimer = null;
+        }
+    }
+
     selectProblem(id) {
         const prob = this.problems.find(item => item.id === id);
         if (!prob) return;
+
+        // Hủy hẹn giờ của bài trước, nếu không nó sẽ ghi đè / đi quân lên bàn cờ của bài mới
+        this.cancelPendingTimer();
         this.currentProblem = prob;
-        this.currentStepIndex = 0;
         this.isBotThinking = false;
 
         if (this.board.size !== prob.size) {
@@ -286,6 +455,8 @@ class TsumegoModule {
         }
 
         this.board.loadPosition(prob.stones, prob.turn, []);
+        this.board.setInteractive(true); // Mở khóa bàn cờ (đã bị khóa sau khi giải xong / đi sai)
+
         const titleEl = document.getElementById('tsumego-title');
         const badgeEl = document.getElementById('tsumego-level-badge');
         const turnEl = document.getElementById('tsumego-turn');
@@ -296,7 +467,6 @@ class TsumegoModule {
 
         this.clearFeedback();
         this.renderProblemList();
-        if (prob.description) this.setFeedback(prob.description, 'info');
     }
 
     resetProblem() {
@@ -318,78 +488,74 @@ class TsumegoModule {
 
     showSolution() {
         if (!this.currentProblem) return;
-        const markers = this.currentProblem.winMoves.map((coordStr, idx) => {
+        const keys = this.currentProblem.winMoves;
+        const labels = 'ABCDEFGH';
+        // Các điểm trong winMoves là đáp án thay thế cho nhau (không phải thứ tự nước đi)
+        this.board.markers = keys.map((coordStr, idx) => {
             const [x, y] = coordStr.split(',').map(Number);
-            return { x, y, type: 'text', text: String(idx + 1), color: '#15803d' };
+            return { x, y, type: 'text', text: keys.length === 1 ? '1' : (labels[idx] || String(idx + 1)), color: '#15803d' };
         });
-        this.board.markers = markers;
         this.board.draw();
-        this.setFeedback('Đã hiển thị các điểm lời giải chính trên bàn cờ.', 'info');
+        this.setFeedback(
+            keys.length === 1
+                ? 'Đã hiển thị điểm lời giải (số 1) trên bàn cờ.'
+                : `Bài này có ${keys.length} đáp án đúng. Đi vào bất kỳ điểm đã đánh dấu nào cũng được chấp nhận.`,
+            'info'
+        );
     }
 
     handlePlayerMove(move) {
         if (!this.currentProblem || this.isBotThinking) return;
-        if (!Array.isArray(this.currentProblem.sequence)) {
-            this.currentProblem.sequence = (this.currentProblem.winMoves || []).map(key => ({
-                move:key, reply:this.currentProblem.replies?.[key] || null,
-                explanation:this.currentProblem.explanations?.[key] || 'Nước đi chính xác!'
-            }));
-        }
-        if (this.currentStepIndex == null) this.currentStepIndex = 0;
-        const step = this.currentProblem.sequence[this.currentStepIndex];
+
+        const problem = this.currentProblem;
         const key = `${move.x},${move.y}`;
-        if (!step || key !== step.move) {
-            this.setFeedback('Nước đi chưa đúng ở bước này. Hãy thử lại nhé!', 'error');
-            this.isBotThinking = true;
-            setTimeout(() => {
-                this.isBotThinking = false;
-                this.selectProblem(this.currentProblem.id);
-            }, 800);
+        const isCorrect = problem.winMoves.includes(key);
+
+        // Khóa bàn cờ ngay: nước sai thì chờ hoàn tác, nước đúng thì bài đã xong.
+        // (Không khóa thì người học vẫn đặt thêm quân được trong lúc chờ.)
+        this.board.markers = [];
+        this.board.setInteractive(false);
+
+        if (!isCorrect) {
+            this.setFeedback('Nước đi này chưa chính xác. Thử lại nhé!', 'error');
+            this.cancelPendingTimer();
+            this.pendingTimer = setTimeout(() => {
+                this.pendingTimer = null;
+                this.selectProblem(problem.id);
+            }, 700);
             return;
         }
-        this.board.markers = [];
-        this.board.draw();
-        const explanation = step.explanation || 'Nước đi chính xác!';
-        const nextIndex = this.currentStepIndex + 1;
-        const advance = () => {
-            this.currentStepIndex = nextIndex;
-            if (nextIndex >= this.currentProblem.sequence.length) {
-                this.solvedIds.add(this.currentProblem.id);
-                try { localStorage.setItem('cvdgl_solved_tsumego', JSON.stringify([...this.solvedIds])); } catch (e) {}
-                this.syncDailyProgress();
-                this.renderProblemList();
-                this.setFeedback(`${explanation} Hoàn thành toàn bộ ${this.currentProblem.sequence.length} nước!`, 'success');
-            } else {
-                this.setFeedback(`${explanation} Đến lượt bạn tìm nước thứ ${nextIndex + 1}/${this.currentProblem.sequence.length}.`, 'info');
-            }
-        };
-        if (step.reply) {
+
+        const explanation = problem.explanations[key] || 'Nước đi chính xác!';
+        this.markSolved(problem.id);
+
+        const botReply = problem.replies[key];
+        if (botReply) {
             this.isBotThinking = true;
-            this.setFeedback(`${explanation} Máy đang đáp trả...`, 'success');
-            setTimeout(() => {
-                const opponent = this.currentProblem.turn === 1 ? 2 : 1;
-                const result = this.board.playMove(step.reply.x, step.reply.y, opponent);
-                if (!result.valid) {
-                    this.isBotThinking = false;
-                    this.setFeedback('Nước đáp trả của máy trong dữ liệu bài tập không hợp lệ. Cần hiệu chỉnh bài này.', 'error');
-                    return;
-                }
-                this.board.currentPlayer = this.currentProblem.turn;
+            this.setFeedback(`${explanation} Đối thủ đang đáp trả...`, 'success');
+            this.cancelPendingTimer();
+            this.pendingTimer = setTimeout(() => {
+                this.pendingTimer = null;
+                const oppColor = problem.turn === 1 ? 2 : 1;
+                // Nước đáp trả do người soạn bài đặt sẵn nên không để luật Ko chặn nhầm
+                this.board.koPoint = null;
+                this.board.playMove(botReply.x, botReply.y, oppColor);
+                this.board.currentPlayer = problem.turn;
                 this.isBotThinking = false;
-                advance();
-            }, 500);
+                this.setFeedback(`${explanation} Bạn đã hoàn thành hình cờ này!`, 'success');
+            }, 450);
         } else {
-            advance();
+            this.setFeedback(`${explanation} Bạn đã hoàn thành bài tập!`, 'success');
         }
     }
 
+    // ---------- Buổi tập hằng ngày ----------
+
     getDailySessionProblems() {
-        const pool = this.currentLevelFilter === 'all'
-            ? this.problems
-            : this.problems.filter(p => p.level === this.currentLevelFilter);
+        const pool = this.getFilteredProblems();
         const source = pool.length > 0 ? pool : this.problems;
 
-        const dayKey = new Date().toISOString().slice(0, 10);
+        const dayKey = this.todayKey();
         let seed = 0;
         for (let i = 0; i < dayKey.length; i++) {
             seed += dayKey.charCodeAt(i) * (i + 1);
@@ -408,7 +574,8 @@ class TsumegoModule {
     startDailySession() {
         const dailyList = this.getDailySessionProblems();
         if (dailyList.length === 0) return;
-        const firstUnsolved = dailyList.find(p => !this.solvedIds.has(p.id)) || dailyList[0];
+        const doneToday = this.loadDailySolved();
+        const firstUnsolved = dailyList.find(p => !doneToday.has(p.id)) || dailyList[0];
         this.selectProblem(firstUnsolved.id);
         this.setFeedback(
             `Buổi tập hôm nay (${dailyList.length} bài): Đang mở "${firstUnsolved.title}".`,
@@ -419,7 +586,7 @@ class TsumegoModule {
     syncDailyProgress() {
         const countEl = document.getElementById('daily-count');
         if (countEl) {
-            const doneToday = Math.min(3, this.solvedIds.size);
+            const doneToday = Math.min(3, this.loadDailySolved().size);
             countEl.textContent = `${doneToday}/3`;
         }
     }
@@ -438,69 +605,71 @@ class TsumegoModule {
         box.textContent = '';
     }
 
-    async importSGFFromUrl(url) {
-    const cleanUrl = (url || '').trim();
-    if (!cleanUrl) {
-        this.setFeedback('Bạn chưa dán đường dẫn file .sgf.', 'error');
-        return;
+    // ---------- Nạp bài từ link / thư mục ----------
+
+    // Link trang GitHub (…/blob/…) là trang HTML, không phải file SGF -> đổi sang link raw
+    normalizeSGFUrl(url) {
+        const m = url.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/(.+)$/i);
+        return m ? `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${m[3]}` : url;
     }
 
-    try {
-        this.setFeedback('Đang tải file .sgf...', 'info');
-        const res = await fetch(cleanUrl);
-        if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`);
-        }
-        const sgfText = await res.text();
-        const fileName = cleanUrl.split('/').pop() || 'Bai-SGF.sgf';
-        const parsed = this.parseSGF(sgfText, fileName);
-
-        if (!parsed.stones || parsed.stones.length === 0) {
-            this.setFeedback('File tải về không có hình cờ hợp lệ (thiếu AB/AW).', 'error');
+    async importSGFFromUrl(url) {
+        const rawUrl = (url || '').trim();
+        if (!rawUrl) {
+            this.setFeedback('Bạn chưa dán đường dẫn file .sgf.', 'error');
             return;
         }
+        const cleanUrl = this.normalizeSGFUrl(rawUrl);
 
-        this.problems.unshift(parsed);
-        this.currentLevelFilter = 'all';
-        this.syncFilterButtons();
-        this.renderProblemList();
-        this.selectProblem(parsed.id);
-        this.setFeedback(`Đã thêm bài "${parsed.title}" thành công!`, 'success');
-    } catch (err) {
-        this.setFeedback(`Không tải được SGF từ link này: ${err.message}. Hãy kiểm tra lại link raw hoặc quyền CORS.`, 'error');
-    }
-}
-
-// load file manifest.json để nạp nhiều bài SGF từ thư mục data/sgf
-async loadLocalSGFManifest(manifestUrl = 'data/sgf/manifest.json') {
-    try {
-        const res = await fetch(manifestUrl);
-        if (!res.ok) return;
-        const items = await res.json();
-        if (!Array.isArray(items)) return;
-
-        for (const item of items) {
-            if (!item.url) continue;
-            const fileRes = await fetch(item.url);
-            if (!fileRes.ok) continue;
-            const sgfText = await fileRes.text();
-            const parsed = this.parseSGF(sgfText, item.title || item.url);
-            if (item.level) parsed.level = item.level;
-            if (item.levelLabel) parsed.levelLabel = item.levelLabel;
-            this.problems.push(parsed);
+        try {
+            this.setFeedback('Đang tải file .sgf...', 'info');
+            const res = await fetch(cleanUrl);
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+            }
+            const sgfText = await res.text();
+            const fileName = cleanUrl.split('/').pop().split('?')[0] || 'Bai-SGF.sgf';
+            this.importSGFText(sgfText, fileName);
+        } catch (err) {
+            this.setFeedback(`Không tải được SGF từ link này: ${err.message}. Hãy kiểm tra lại link raw hoặc quyền CORS.`, 'error');
         }
-        this.renderProblemList();
-    } catch (e) {
-        // Bỏ qua nếu chưa tạo thư mục data/sgf
     }
-}
+
+    // Nạp nhiều bài SGF từ manifest.json trong thư mục data/sgf (bỏ qua nếu chưa tạo thư mục này)
+    async loadLocalSGFManifest(manifestUrl = 'data/sgf/manifest.json') {
+        try {
+            const res = await fetch(manifestUrl);
+            if (!res.ok) return;
+            const items = await res.json();
+            if (!Array.isArray(items)) return;
+
+            for (const item of items) {
+                if (!item || !item.url) continue;
+                try {
+                    const fileRes = await fetch(item.url);
+                    if (!fileRes.ok) continue;
+                    const { problem } = this.buildSGFProblem(await fileRes.text(), item.title || item.url);
+                    if (!problem) continue;
+                    if (item.level) problem.level = item.level;
+                    if (item.levelLabel) problem.levelLabel = item.levelLabel;
+                    this.insertProblem(problem, true);
+                } catch (e) { /* bỏ qua file lỗi, tiếp tục file khác */ }
+            }
+            this.onTabShown();
+        } catch (e) {
+            // Bỏ qua nếu chưa tạo thư mục data/sgf
+        }
+    }
 }
 
 let tsumegoApp = null;
 
+// Khởi tạo đúng 1 lần (nhiều bản cùng gắn vào 1 canvas sẽ làm mỗi cú bấm bị xử lý nhiều lần)
 function initTsumegoIfNeeded() {
     if (!tsumegoApp && document.getElementById('tsumego-board')) {
         tsumegoApp = new TsumegoModule('tsumego-board');
+        // Mở file trực tiếp (file://) thì trình duyệt cấm fetch, chỉ nạp thư mục SGF khi chạy qua server/hosting
+        if (location.protocol !== 'file:') tsumegoApp.loadLocalSGFManifest();
     }
 }
 
