@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cờ Vây - Chơi Với Máy (MCTS)</title>
+    <title>Cờ Vây - Chơi Với KataGo</title>
     <style>
         * {
             box-sizing: border-box;
@@ -132,16 +132,16 @@
 </head>
 <body>
     <div class="top-bar">
-        <a href="index.html" class="back-link">← Trang chủ</a>
-        <h1>CHƠI VỚI MÁY (MCTS)</h1>
+        <a href="index.html" class="back-link" onclick="window.location.href='index.html'">← Trang chủ</a>
+        <h1>CHƠI VỚI KATAGO</h1>
         <span></span>
     </div>
 
     <div class="controls">
         <select id="difficultySelect">
-            <option value="easy">Độ khó: Dễ (200 lượt)</option>
-            <option value="medium" selected>Độ khó: Trung bình (750 lượt)</option>
-            <option value="hard">Độ khó: Khó (2200 lượt)</option>
+            <option value="easy">Độ khó: Dễ (200 lượt KataGo)</option>
+            <option value="medium" selected>Độ khó: Trung bình (750 lượt KataGo)</option>
+            <option value="hard">Độ khó: Khó (2200 lượt KataGo)</option>
         </select>
 
         <select id="sizeSelect">
@@ -173,6 +173,6 @@
 
     <div id="messageBox"></div>
 
-    <script src="game.js"></script>
+    <script type="module" src="game.js"></script>
 </body>
 </html>

@@ -1,17 +1,18 @@
 /**
- * ai-worker.js - Monte Carlo Tree Search (UCT) cho Cờ Vây
+ * ai-worker.js - MCTS nâng cấp với Progressive Bias & Tactical Playout
  */
 
 class MCTSNode {
-    constructor(board, playerToMove, koPoint, move = null, parent = null) {
+    constructor(board, playerToMove, koPoint, move = null, parent = null, priorScore = 0) {
         this.board = board;
-        this.playerToMove = playerToMove; // 1 = Đen, 2 = Trắng
+        this.playerToMove = playerToMove;
         this.koPoint = koPoint;
-        this.move = move; // { x, y } hoặc null (Pass)
+        this.move = move;
         this.parent = parent;
+        this.priorScore = priorScore;
         this.children = [];
         this.visits = 0;
-        this.wins = 0; // Tính theo góc nhìn của aiColor
+        this.wins = 0;
         this.untriedMoves = null;
     }
 
@@ -19,18 +20,19 @@ class MCTSNode {
         return this.untriedMoves !== null && this.untriedMoves.length === 0;
     }
 
-    bestUCTChild(explorationC = 1.41) {
+    bestScore(explorationC = 1.35, biasWeight = 0.5) {
         let bestChild = null;
-        let bestScore = -Infinity;
+        let bestVal = -Infinity;
 
         for (const child of this.children) {
             if (child.visits === 0) return child;
             const exploitation = child.wins / child.visits;
-            const exploration = explorationC * Math.sqrt(Math.log(this.visits) / child.visits);
-            const uct = exploitation + exploration;
+            const exploration = explorationC * Math.sqrt(Math.log(Math.max(1, this.visits)) / child.visits);
+            const progressiveBias = (child.priorScore * biasWeight) / (1 + child.visits);
+            const total = exploitation + exploration + progressiveBias;
 
-            if (uct > bestScore) {
-                bestScore = uct;
+            if (total > bestVal) {
+                bestVal = total;
                 bestChild = child;
             }
         }
@@ -38,153 +40,218 @@ class MCTSNode {
     }
 }
 
-class GoMCTSEngine {
+class StrongBrowserGoAI {
     constructor(size, aiColor = 2) {
         this.size = size;
         this.aiColor = aiColor;
         this.opponentColor = aiColor === 1 ? 2 : 1;
     }
 
-    search(board, koPoint, iterations = 800, moveCount = 0) {
-        // Khai cuộc nhanh trên bàn lớn để tiết kiệm thời gian
-        if (moveCount < 4) {
-            const opening = this.pickOpeningMove(board, koPoint);
-            if (opening) return opening;
-        }
-
+    search(board, koPoint, maxIterations = 1200, moveCount = 0) {
         const root = new MCTSNode(
             this.cloneBoard(board),
             this.aiColor,
-            koPoint ? { ...koPoint } : null
+            koPoint ? { ...koPoint } : null,
+            null,
+            null,
+            0
         );
-        root.untriedMoves = this.getCandidateMoves(root.board, root.playerToMove, root.koPoint, moveCount);
+        root.untriedMoves = this.getRankedCandidateMoves(root.board, root.playerToMove, root.koPoint, moveCount);
 
         if (root.untriedMoves.length === 0) return null;
+        if (root.untriedMoves.length === 1) return root.untriedMoves[0].move;
 
-        const maxPlayoutSteps = this.size * this.size * 2;
+        const maxPlayoutSteps = Math.min(this.size * this.size, 180);
+        let iterationsRun = 0;
 
-        for (let i = 0; i < iterations; i++) {
+        while (iterationsRun < maxIterations) {
+            iterationsRun++;
             let node = root;
 
-            // 1. SELECTION
+            // 1. Selection
             while (node.isFullyExpanded() && node.children.length > 0) {
-                node = node.bestUCTChild(1.41);
+                node = node.bestScore();
             }
 
-            // 2. EXPANSION
+            // 2. Expansion
             if (!node.isFullyExpanded()) {
-                const idx = Math.floor(Math.random() * node.untriedMoves.length);
-                const mv = node.untriedMoves.splice(idx, 1)[0];
+                // Ưu tiên mở rộng các ứng viên có điểm prior cao hơn
+                const candidate = node.untriedMoves.shift();
+                const mv = candidate.move;
                 const sim = this.applyMove(node.board, mv.x, mv.y, node.playerToMove, node.koPoint);
 
                 if (sim.valid) {
                     const nextPlayer = node.playerToMove === 1 ? 2 : 1;
-                    const child = new MCTSNode(sim.board, nextPlayer, sim.nextKo, mv, node);
-                    child.untriedMoves = this.getCandidateMoves(child.board, nextPlayer, child.koPoint, moveCount + 10);
+                    const child = new MCTSNode(
+                        sim.board,
+                        nextPlayer,
+                        sim.nextKo,
+                        mv,
+                        node,
+                        candidate.normPrior
+                    );
+                    child.untriedMoves = this.getRankedCandidateMoves(
+                        child.board,
+                        nextPlayer,
+                        child.koPoint,
+                        moveCount + 4
+                    );
                     node.children.push(child);
                     node = child;
                 }
             }
 
-            // 3. SIMULATION (Playout có thiên hướng chiến thuật nhẹ)
-            const winner = this.simulatePlayout(node.board, node.playerToMove, node.koPoint, maxPlayoutSteps);
+            // 3. Tactical Simulation
+            const winner = this.simulateTacticalPlayout(
+                node.board,
+                node.playerToMove,
+                node.koPoint,
+                maxPlayoutSteps
+            );
 
-            // 4. BACKPROPAGATION
-            const reward = winner === this.aiColor ? 1 : (winner === 0 ? 0.5 : 0);
-            while (node !== null) {
-                node.visits++;
-                // Đảo chiều reward nếu node đại diện cho lượt đối thủ đánh
-                if (node.parent === null) {
-                    node.wins += reward;
+            // 4. Backpropagation
+            const baseReward = winner === this.aiColor ? 1 : (winner === 0 ? 0.5 : 0);
+            let curr = node;
+            while (curr !== null) {
+                curr.visits++;
+                if (curr.parent === null) {
+                    curr.wins += baseReward;
                 } else {
-                    const mover = node.parent.playerToMove;
-                    node.wins += (mover === this.aiColor ? reward : 1 - reward);
+                    const mover = curr.parent.playerToMove;
+                    curr.wins += (mover === this.aiColor ? baseReward : 1 - baseReward);
                 }
-                node = node.parent;
+                curr = curr.parent;
             }
         }
 
-        // Chọn con có số lượt thăm (visits) cao nhất — ổn định hơn điểm win trung bình
         let bestChild = null;
-        let mostVisits = -1;
+        let bestVisits = -1;
         for (const child of root.children) {
-            if (child.visits > mostVisits) {
-                mostVisits = child.visits;
+            if (child.visits > bestVisits) {
+                bestVisits = child.visits;
                 bestChild = child;
             }
         }
 
-        return bestChild ? bestChild.move : null;
+        return bestChild ? bestChild.move : root.untriedMoves[0]?.move || null;
     }
 
-    pickOpeningMove(board, koPoint) {
-        const starPoints = this.size === 9
+    getStarPoints() {
+        return this.size === 9
             ? [[2, 2], [6, 2], [2, 6], [6, 6], [4, 4]]
             : this.size === 13
                 ? [[3, 3], [9, 3], [3, 9], [9, 9], [6, 6]]
                 : [[3, 3], [9, 3], [15, 3], [3, 9], [15, 9], [3, 15], [9, 15], [15, 15]];
-
-        const validStars = [];
-        for (const [x, y] of starPoints) {
-            if (board[y][x] === 0 && !(koPoint && koPoint.x === x && koPoint.y === y)) {
-                validStars.push({ x, y });
-            }
-        }
-        if (validStars.length === 0) return null;
-        return validStars[Math.floor(Math.random() * validStars.length)];
     }
 
-    getCandidateMoves(board, player, koPoint, moveCount) {
-        const moves = [];
+    getRankedCandidateMoves(board, player, koPoint, moveCount) {
+        const rawMoves = [];
         const hasAnyStone = this.hasStones(board);
+        const searchRadius = this.size >= 19 ? 2 : 3;
+        const strategicPoints = new Set(this.getStarPoints().map(([x, y]) => `${x},${y}`));
 
         for (let y = 0; y < this.size; y++) {
             for (let x = 0; x < this.size; x++) {
                 if (board[y][x] !== 0) continue;
                 if (koPoint && koPoint.x === x && koPoint.y === y) continue;
-
-                // Sau những nước đầu, ưu tiên ô gần quân hiện có để thu hẹp không gian tìm kiếm
-                if (hasAnyStone && moveCount > 2 && !this.isNearStone(board, x, y, 2)) {
+                if (
+                    hasAnyStone &&
+                    moveCount > 2 &&
+                    !this.isNearStone(board, x, y, searchRadius) &&
+                    !strategicPoints.has(`${x},${y}`)
+                ) {
                     continue;
                 }
-
-                // Bỏ qua ô tự lấp mắt hiển nhiên của chính mình
                 if (this.isTrueEyeLike(board, x, y, player)) continue;
 
-                const check = this.applyMove(board, x, y, player, koPoint);
-                if (check.valid) {
-                    moves.push({ x, y });
-                }
+                const sim = this.applyMove(board, x, y, player, koPoint);
+                if (!sim.valid) continue;
+
+                const heuristic = this.scoreTacticalMove(board, sim, x, y, player);
+                rawMoves.push({ move: { x, y }, heuristic });
             }
         }
 
-        // Dự phòng nếu danh sách ứng viên rỗng
-        if (moves.length === 0) {
+        if (rawMoves.length === 0) {
             for (let y = 0; y < this.size; y++) {
                 for (let x = 0; x < this.size; x++) {
                     if (board[y][x] === 0 && !(koPoint && koPoint.x === x && koPoint.y === y)) {
                         if (this.applyMove(board, x, y, player, koPoint).valid) {
-                            moves.push({ x, y });
+                            rawMoves.push({ move: { x, y }, heuristic: 0 });
                         }
                     }
                 }
             }
         }
 
-        return moves;
+        rawMoves.sort((a, b) => b.heuristic - a.heuristic);
+        // Giới hạn số nhánh mở rộng để tập trung lực tính toán
+        const cap = this.size >= 50 ? 100 : 40;
+        const trimmed = rawMoves.slice(0, cap);
+
+        const maxH = trimmed.length > 0 ? Math.max(1, Math.abs(trimmed[0].heuristic)) : 1;
+        return trimmed.map(item => ({
+            move: item.move,
+            normPrior: Math.max(0, Math.min(1, (item.heuristic + maxH) / (2 * maxH)))
+        }));
     }
 
-    simulatePlayout(startBoard, startPlayer, startKo, maxSteps) {
+    scoreTacticalMove(oldBoard, sim, x, y, player) {
+        const opp = player === 1 ? 2 : 1;
+        let score = 0;
+
+        // Ăn quân đối thủ
+        score += sim.capturedCount * 140;
+
+        // Đánh vào khí đối thủ (Atari) và cứu quân mình đang bị Atari
+        const neighbors = this.getNeighbors(x, y);
+        const myNewGroup = this.getGroupAndLiberties(sim.board, x, y);
+
+        if (myNewGroup.liberties === 1) {
+            score -= 80;
+        } else {
+            score += Math.min(40, myNewGroup.liberties * 8);
+        }
+
+        const alliedAtariGroups = new Set();
+        for (const [nx, ny] of neighbors) {
+            const oldVal = oldBoard[ny][nx];
+            if (oldVal === player) {
+                const oldG = this.getGroupAndLiberties(oldBoard, nx, ny);
+                const key = `${oldG.stones[0][0]},${oldG.stones[0][1]}`;
+                if (oldG.liberties === 1 && myNewGroup.liberties > 1 && !alliedAtariGroups.has(key)) {
+                    alliedAtariGroups.add(key);
+                    score += 110 * oldG.stones.length;
+                }
+            } else if (sim.board[ny][nx] === opp) {
+                const oppG = this.getGroupAndLiberties(sim.board, nx, ny);
+                if (oppG.liberties === 1) {
+                    score += 45 * oppG.stones.length;
+                }
+            }
+        }
+
+        // Vị trí đường 3-4
+        const dx = Math.min(x, this.size - 1 - x);
+        const dy = Math.min(y, this.size - 1 - y);
+        if (dx === 0 || dy === 0) score -= 12;
+        else if ((dx === 2 || dx === 3) && (dy === 2 || dy === 3)) score += 20;
+        else if (dx === 2 || dx === 3 || dy === 2 || dy === 3) score += 10;
+
+        return score;
+    }
+
+    simulateTacticalPlayout(startBoard, startPlayer, startKo, maxSteps) {
         let board = this.cloneBoard(startBoard);
         let player = startPlayer;
         let ko = startKo ? { ...startKo } : null;
-        let consecutivePasses = 0;
+        let passes = 0;
 
         for (let step = 0; step < maxSteps; step++) {
-            const move = this.pickPlayoutMove(board, player, ko);
+            const move = this.pickSmartPlayoutMove(board, player, ko);
             if (!move) {
-                consecutivePasses++;
-                if (consecutivePasses >= 2) break;
+                passes++;
+                if (passes >= 2) break;
                 ko = null;
                 player = player === 1 ? 2 : 1;
                 continue;
@@ -192,46 +259,58 @@ class GoMCTSEngine {
 
             const res = this.applyMove(board, move.x, move.y, player, ko);
             if (!res.valid) {
-                consecutivePasses++;
-                if (consecutivePasses >= 2) break;
+                passes++;
+                if (passes >= 2) break;
                 player = player === 1 ? 2 : 1;
                 continue;
             }
 
             board = res.board;
             ko = res.nextKo;
-            consecutivePasses = 0;
+            passes = 0;
             player = player === 1 ? 2 : 1;
         }
 
         return this.estimateWinner(board);
     }
 
-    pickPlayoutMove(board, player, ko) {
-        const candidates = [];
+    pickSmartPlayoutMove(board, player, ko) {
+        const opp = player === 1 ? 2 : 1;
+        const urgentMoves = [];
+        const fallbackMoves = [];
+
         for (let y = 0; y < this.size; y++) {
             for (let x = 0; x < this.size; x++) {
                 if (board[y][x] !== 0) continue;
                 if (ko && ko.x === x && ko.y === y) continue;
                 if (this.isTrueEyeLike(board, x, y, player)) continue;
-                candidates.push({ x, y });
+
+                // Kiểm tra nhanh xem có ô kề bên đang còn 1 khí (của địch để ăn, hoặc của mình để cứu)
+                for (const [nx, ny] of this.getNeighbors(x, y)) {
+                    const val = board[ny][nx];
+                    if (val === opp || val === player) {
+                        const g = this.getGroupAndLiberties(board, nx, ny);
+                        if (g.liberties === 1) {
+                            urgentMoves.push({ x, y });
+                            break;
+                        }
+                    }
+                }
+                fallbackMoves.push({ x, y });
             }
         }
 
-        if (candidates.length === 0) return null;
-
-        // Lấy mẫu ngẫu nhiên tối đa 18 ô để rollout chạy thật nhanh
-        const sampleSize = Math.min(18, candidates.length);
-        for (let i = 0; i < sampleSize; i++) {
-            const randIdx = i + Math.floor(Math.random() * (candidates.length - i));
-            [candidates[i], candidates[randIdx]] = [candidates[randIdx], candidates[i]];
-            const mv = candidates[i];
-            const res = this.applyMove(board, mv.x, mv.y, player, ko);
-            if (res.valid) return mv;
-        }
-
-        for (const mv of candidates) {
-            if (this.applyMove(board, mv.x, mv.y, player, ko).valid) return mv;
+        for (const list of [urgentMoves, fallbackMoves]) {
+            if (list.length === 0) continue;
+            const sample = Math.min(12, list.length);
+            for (let i = 0; i < sample; i++) {
+                const idx = i + Math.floor(Math.random() * (list.length - i));
+                [list[i], list[idx]] = [list[idx], list[i]];
+                const mv = list[i];
+                if (this.applyMove(board, mv.x, mv.y, player, ko).valid) {
+                    return mv;
+                }
+            }
         }
         return null;
     }
@@ -239,16 +318,14 @@ class GoMCTSEngine {
     estimateWinner(board) {
         const visited = Array.from({ length: this.size }, () => Array(this.size).fill(false));
         let blackScore = 0;
-        let whiteScore = 6.5; // Komi mặc định cho Trắng
+        let whiteScore = 6.5;
 
         for (let y = 0; y < this.size; y++) {
             for (let x = 0; x < this.size; x++) {
                 const val = board[y][x];
-                if (val === 1) {
-                    blackScore++;
-                } else if (val === 2) {
-                    whiteScore++;
-                } else if (!visited[y][x]) {
+                if (val === 1) blackScore++;
+                else if (val === 2) whiteScore++;
+                else if (!visited[y][x]) {
                     const region = [];
                     const borders = new Set();
                     const queue = [[x, y]];
@@ -266,7 +343,6 @@ class GoMCTSEngine {
                             }
                         }
                     }
-
                     if (borders.size === 1) {
                         const owner = [...borders][0];
                         if (owner === 1) blackScore += region.length;
@@ -286,28 +362,22 @@ class GoMCTSEngine {
         if (board[y][x] !== 0) return { valid: false };
         if (koPoint && koPoint.x === x && koPoint.y === y) return { valid: false };
 
-        const opponent = player === 1 ? 2 : 1;
+        const opp = player === 1 ? 2 : 1;
         const nextBoard = this.cloneBoard(board);
         nextBoard[y][x] = player;
 
         let captured = [];
         for (const [nx, ny] of this.getNeighbors(x, y)) {
-            if (nextBoard[ny][nx] === opponent) {
+            if (nextBoard[ny][nx] === opp) {
                 const group = this.getGroupAndLiberties(nextBoard, nx, ny);
-                if (group.liberties === 0) {
-                    captured.push(...group.stones);
-                }
+                if (group.liberties === 0) captured.push(...group.stones);
             }
         }
 
-        for (const [sx, sy] of captured) {
-            nextBoard[sy][sx] = 0;
-        }
+        for (const [sx, sy] of captured) nextBoard[sy][sx] = 0;
 
         const myGroup = this.getGroupAndLiberties(nextBoard, x, y);
-        if (myGroup.liberties === 0) {
-            return { valid: false }; // Tự sát
-        }
+        if (myGroup.liberties === 0) return { valid: false };
 
         let nextKo = null;
         if (captured.length === 1 && myGroup.stones.length === 1 && myGroup.liberties === 1) {
@@ -329,9 +399,8 @@ class GoMCTSEngine {
             stones.push([cx, cy]);
             for (const [nx, ny] of this.getNeighbors(cx, cy)) {
                 const key = `${nx},${ny}`;
-                if (board[ny][nx] === 0) {
-                    liberties.add(key);
-                } else if (board[ny][nx] === color && !visited.has(key)) {
+                if (board[ny][nx] === 0) liberties.add(key);
+                else if (board[ny][nx] === color && !visited.has(key)) {
                     visited.add(key);
                     queue.push([nx, ny]);
                 }
@@ -345,9 +414,7 @@ class GoMCTSEngine {
         const res = [];
         for (const [dx, dy] of dirs) {
             const nx = x + dx, ny = y + dy;
-            if (nx >= 0 && nx < this.size && ny >= 0 && ny < this.size) {
-                res.push([nx, ny]);
-            }
+            if (nx >= 0 && nx < this.size && ny >= 0 && ny < this.size) res.push([nx, ny]);
         }
         return res;
     }
@@ -362,9 +429,7 @@ class GoMCTSEngine {
             for (let dx = -radius; dx <= radius; dx++) {
                 if (dx === 0 && dy === 0) continue;
                 const nx = x + dx, ny = y + dy;
-                if (nx >= 0 && nx < this.size && ny >= 0 && ny < this.size && board[ny][nx] !== 0) {
-                    return true;
-                }
+                if (nx >= 0 && nx < this.size && ny >= 0 && ny < this.size && board[ny][nx] !== 0) return true;
             }
         }
         return false;
@@ -386,7 +451,10 @@ class GoMCTSEngine {
 
 self.onmessage = function (e) {
     const { board, size, aiColor, koPoint, iterations, moveCount } = e.data;
-    const engine = new GoMCTSEngine(size, aiColor);
-    const bestMove = engine.search(board, koPoint, iterations, moveCount);
-    self.postMessage({ move: bestMove });
+    const engine = new StrongBrowserGoAI(size, aiColor);
+    const maxIterations = Number.isFinite(iterations)
+        ? Math.max(1, Math.min(6000, Math.floor(iterations)))
+        : 1200;
+    const move = engine.search(board, koPoint, maxIterations, moveCount || 0);
+    self.postMessage({ move });
 };

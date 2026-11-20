@@ -1,3 +1,14 @@
+import { KataGoEngineClient } from 'katago-web';
+import kataModelUrl from './katago/kata.bin?url';
+
+const kataGoClient = new KataGoEngineClient();
+const kataGoBackend = navigator.gpu ? 'webgpu' : 'wasm';
+const DIFFICULTY_VISITS = {
+    easy: 200,
+    medium: 750,
+    hard: 2200
+};
+
 const canvas = document.getElementById('goBoard');
 const ctx = canvas.getContext('2d');
 const turnIndicator = document.getElementById('turnIndicator');
@@ -5,44 +16,31 @@ const messageBox = document.getElementById('messageBox');
 const blackCapEl = document.getElementById('blackCaptures');
 const whiteCapEl = document.getElementById('whiteCaptures');
 
-const DIFFICULTY_ITERATIONS = {
-    easy: 200,
-    medium: 750,
-    hard: 2200
-};
-
 let BOARD_SIZE = 9;
 let CELL_SIZE = 0;
 const PADDING = 30;
 
 let board = [];
+let moveHistory = [];
 let currentPlayer = 1; // 1 = Đen (Người), 2 = Trắng (AI)
 let captures = { 1: 0, 2: 0 };
 let koPoint = null;
 let lastMove = null;
 let passCount = 0;
-let moveCount = 0;
 let gameOver = false;
 let isAiThinking = false;
-let aiWorker = null;
+let gameGeneration = 0;
+let kataGoInitialized = false;
 
-function createWorker() {
-    if (aiWorker) {
-        aiWorker.terminate();
+kataGoClient.onLoadProgress(({ stage, percent }) => {
+    if (isAiThinking && !kataGoInitialized) {
+        turnIndicator.textContent = `Đang nạp KataGo (${stage}: ${Math.round(percent)}%)`;
     }
-    aiWorker = new Worker('ai-worker.js');
-    aiWorker.onmessage = function (e) {
-        const { move } = e.data;
-        isAiThinking = false;
-        if (move) {
-            placeStone(move.x, move.y, 2);
-        } else {
-            handlePass(true);
-        }
-    };
-}
+});
 
 function initGame() {
+    gameGeneration++;
+    kataGoClient.cancelGroup('interactive');
     BOARD_SIZE = parseInt(document.getElementById('sizeSelect').value, 10);
     const maxCanvasSize = Math.min(window.innerWidth - 40, 560);
     canvas.width = maxCanvasSize;
@@ -50,19 +48,18 @@ function initGame() {
     CELL_SIZE = (canvas.width - PADDING * 2) / (BOARD_SIZE - 1);
 
     board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
+    moveHistory = [];
     currentPlayer = 1;
     captures = { 1: 0, 2: 0 };
     koPoint = null;
     lastMove = null;
     passCount = 0;
-    moveCount = 0;
     gameOver = false;
     isAiThinking = false;
 
-    createWorker();
     updateUI();
     drawBoard();
-    setMessage('Bạn cầm quân Đen (MCTS đang chạy trên Web Worker).');
+    setMessage('Bạn cầm quân Đen. KataGo sẽ phân tích trên thiết bị của bạn.');
 }
 
 function resetGame() {
@@ -149,8 +146,8 @@ function placeStone(x, y, player) {
     board = tempBoard;
     captures[player] += capturedStones.length;
     lastMove = { x, y };
+    moveHistory.push({ x, y, player: player === 1 ? 'black' : 'white' });
     passCount = 0;
-    moveCount++;
     currentPlayer = opponent;
 
     updateUI();
@@ -159,23 +156,68 @@ function placeStone(x, y, player) {
     return true;
 }
 
-function triggerAiMove() {
+async function triggerAiMove() {
     if (gameOver || currentPlayer !== 2) return;
     isAiThinking = true;
+    const requestGeneration = gameGeneration;
     const level = document.getElementById('difficultySelect').value;
-    const iterations = DIFFICULTY_ITERATIONS[level] || 750;
+    const visits = DIFFICULTY_VISITS[level] || 750;
 
-    turnIndicator.textContent = `Máy đang nghĩ (${iterations} lượt MCTS)...`;
+    turnIndicator.textContent = `KataGo đang tìm (${visits} lượt)...`;
     turnIndicator.style.color = '#fbc531';
 
-    aiWorker.postMessage({
-        board,
-        size: BOARD_SIZE,
-        aiColor: 2,
-        koPoint,
-        iterations,
-        moveCount
-    });
+    try {
+        if (!kataGoInitialized) {
+            setMessage('Đang tải và khởi tạo model KataGo (~282 MB); lần đầu có thể mất một lúc.');
+            await kataGoClient.init(kataModelUrl, kataGoBackend);
+            kataGoInitialized = true;
+        }
+        if (requestGeneration !== gameGeneration) return;
+
+        const analysis = await kataGoClient.analyze({
+            analysisGroup: 'interactive',
+            modelUrl: kataModelUrl,
+            board: board.map(row => row.map(stone => (
+                stone === 1 ? 'black' : stone === 2 ? 'white' : null
+            ))),
+            koPoint: koPoint ? koPoint.y * BOARD_SIZE + koPoint.x : undefined,
+            currentPlayer: 'white',
+            moveHistory: moveHistory.slice(-5),
+            komi: 6.5,
+            rules: 'japanese',
+            visits,
+            maxTimeMs: level === 'hard' ? 60000 : level === 'medium' ? 30000 : 15000,
+            topK: 10,
+            analysisPvLen: 8,
+            ownershipMode: 'none',
+            conservativePass: true
+        });
+        if (requestGeneration !== gameGeneration) return;
+
+        const bestMove = analysis.moves[0];
+        if (!bestMove || bestMove.x < 0 || bestMove.y < 0) {
+            handlePass(true);
+        } else if (
+            bestMove.x >= BOARD_SIZE ||
+            bestMove.y >= BOARD_SIZE ||
+            board[bestMove.y][bestMove.x] !== 0 ||
+            (koPoint && koPoint.x === bestMove.x && koPoint.y === bestMove.y)
+        ) {
+            throw new Error(`KataGo returned an illegal move (${bestMove.x}, ${bestMove.y}).`);
+        } else if (!placeStone(bestMove.x, bestMove.y, 2)) {
+            throw new Error(`KataGo move (${bestMove.x}, ${bestMove.y}) was rejected by the game rules.`);
+        }
+    } catch (error) {
+        if (requestGeneration === gameGeneration) {
+            const detail = error instanceof Error ? error.message : String(error);
+            setMessage(`Lỗi KataGo: ${detail}`);
+        }
+    } finally {
+        if (requestGeneration === gameGeneration) {
+            isAiThinking = false;
+            updateUI();
+        }
+    }
 }
 
 canvas.addEventListener('click', (e) => {
@@ -364,5 +406,10 @@ function updateUI() {
 function setMessage(msg) {
     messageBox.textContent = msg;
 }
+
+window.resetGame = resetGame;
+window.handlePass = handlePass;
+window.calculateFinalScore = calculateFinalScore;
+window.addEventListener('pagehide', () => kataGoClient.dispose(), { once: true });
 
 initGame();

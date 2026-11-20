@@ -1,0 +1,2 @@
+*.patch text eol=lf
+playAI/katago/kata.bin filter=lfs diff=lfs merge=lfs -text

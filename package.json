@@ -1,0 +1,18 @@
+{
+  "name": "covaydongian",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "postinstall": "patch-package"
+  },
+  "dependencies": {
+    "katago-web": "1.0.0"
+  },
+  "devDependencies": {
+    "patch-package": "^8.0.1",
+    "vite": "^7.3.0"
+  }
+}

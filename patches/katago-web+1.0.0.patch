@@ -1,0 +1,87 @@
+diff --git a/node_modules/katago-web/dist/model/modelV8.js b/node_modules/katago-web/dist/model/modelV8.js
+index b36b402..2b11af9 100644
+--- a/node_modules/katago-web/dist/model/modelV8.js
++++ b/node_modules/katago-web/dist/model/modelV8.js
+@@ -140,6 +140,21 @@ function precomputeRope(attn, H = BOARD_SIZE, W = BOARD_SIZE) {
+     }
+     return undefined;
+ }
++function getRopeForSize(attn, H, W) {
++    if (!attn.ropeConfig.useRope)
++        return undefined;
++    const key = `${H}x${W}`;
++    let rope = attn.ropeCache.get(key);
++    if (!rope) {
++        rope = precomputeRope(attn.ropeConfig, H, W);
++        if (rope) {
++            tf.keep(rope.cos);
++            tf.keep(rope.sin);
++            attn.ropeCache.set(key, rope);
++        }
++    }
++    return rope;
++}
+ function makeConv(conv) {
+     // File weights are in [kY,kX,inC,outC] which matches tf.conv2d filter format.
+     const filter = tf.tensor4d(conv.weights, [conv.kernelY, conv.kernelX, conv.inChannels, conv.outChannels]);
+@@ -205,21 +220,22 @@ function forwardAttention(x, attn) {
+     const W = x.shape[2];
+     const C = x.shape[3];
+     const S = H * W;
++    const rope = getRopeForSize(attn, H, W);
+     const normX = applyTransformerRMSNorm(x, attn.preLN);
+     const flat = normX.reshape([N * S, C]);
+     const [qFlat, kFlat, vFlat] = projectGroup(flat, attn.qkv);
+-    const fusedRotary = attn.fuseRotary && !!attn.rope && tf.getBackend() === 'webgpu';
++    const fusedRotary = attn.fuseRotary && !!rope && tf.getBackend() === 'webgpu';
+     let Q = fusedRotary
+-        ? projectedRotaryWebGpu(qFlat, attn.rope.cos, attn.rope.sin, N, attn.numHeads, S, attn.qHeadDim)
++        ? projectedRotaryWebGpu(qFlat, rope.cos, rope.sin, N, attn.numHeads, S, attn.qHeadDim)
+         : qFlat.reshape([N, S, attn.numHeads, attn.qHeadDim]).transpose([0, 2, 1, 3]);
+     let K = fusedRotary
+-        ? projectedRotaryWebGpu(kFlat, attn.rope.cos, attn.rope.sin, N, attn.numKVHeads, S, attn.qHeadDim)
++        ? projectedRotaryWebGpu(kFlat, rope.cos, rope.sin, N, attn.numKVHeads, S, attn.qHeadDim)
+         : kFlat.reshape([N, S, attn.numKVHeads, attn.qHeadDim]).transpose([0, 2, 1, 3]);
+     let V = vFlat.reshape([N, S, attn.numKVHeads, attn.vHeadDim]).transpose([0, 2, 1, 3]);
+-    if (attn.rope && !fusedRotary) {
++    if (rope && !fusedRotary) {
+         const numPairs = Math.floor(attn.qHeadDim / 2);
+-        let cosQ = attn.rope.cos;
+-        let sinQ = attn.rope.sin;
++        let cosQ = rope.cos;
++        let sinQ = rope.sin;
+         if (attn.numHeads !== attn.numKVHeads && cosQ.shape[1] === attn.numKVHeads) {
+             const g = Math.floor(attn.numHeads / attn.numKVHeads);
+             cosQ = cosQ.reshape([1, attn.numKVHeads, 1, S, numPairs]).tile([1, 1, g, 1, 1]).reshape([1, attn.numHeads, S, numPairs]);
+@@ -230,8 +246,8 @@ function forwardAttention(x, attn) {
+         const qRot0 = tf.sub(tf.mul(q0, cosQ), tf.mul(q1, sinQ));
+         const qRot1 = tf.add(tf.mul(q0, sinQ), tf.mul(q1, cosQ));
+         Q = tf.stack([qRot0, qRot1], -1).reshape([N, attn.numHeads, S, attn.qHeadDim]);
+-        const cosK = attn.rope.cos;
+-        const sinK = attn.rope.sin;
++        const cosK = rope.cos;
++        const sinK = rope.sin;
+         const kPair = K.reshape([N, attn.numKVHeads, S, numPairs, 2]);
+         const [k0, k1] = tf.unstack(kPair, -1);
+         const kRot0 = tf.sub(tf.mul(k0, cosK), tf.mul(k1, sinK));
+@@ -385,7 +401,8 @@ export class KataGoModelV8Tf {
+                     preLN: makeTransformerRMSNorm(b.preLN, options.fuseRmsNorm ?? true),
+                     qkv: makeProjectionGroup([b.qProj, b.kProj, b.vProj], fuseProjections),
+                     outProj: makeMatMul(b.outProj),
+-                    rope: precomputeRope(b),
++                    ropeConfig: b,
++                    ropeCache: new Map(),
+                     scale: 1.0 / Math.sqrt(b.qHeadDim),
+                 };
+             }
+@@ -614,8 +631,8 @@ export class KataGoModelV8Tf {
+             }
+             if (block.kind === 'transformer_attention') {
+                 tensors.push(block.preLN.weight, ...block.qkv.layers.map(layer => layer.w), block.outProj.w);
+-                if (block.rope) {
+-                    tensors.push(block.rope.cos, block.rope.sin);
++                for (const rope of block.ropeCache.values()) {
++                    tensors.push(rope.cos, rope.sin);
+                 }
+                 return;
+             }
