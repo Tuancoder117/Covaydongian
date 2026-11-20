@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cờ Vây Đơn Giản - Chơi Với Máy</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background-color: #1e1e24;
+            color: #f4f4f6;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        h1 {
+            margin-bottom: 15px;
+            font-size: 26px;
+            color: #e6b87d;
+            letter-spacing: 1px;
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 15px;
+            justify-content: center;
+            align-items: center;
+        }
+        select, button {
+            padding: 8px 14px;
+            font-size: 14px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        select {
+            background-color: #2b2b36;
+            color: #fff;
+            border: 1px solid #444;
+        }
+        button {
+            background-color: #d99b52;
+            color: #1e1e24;
+        }
+        button:hover {
+            background-color: #e8ae68;
+            transform: translateY(-1px);
+        }
+        button.secondary {
+            background-color: #3a3a48;
+            color: #fff;
+        }
+        button.secondary:hover {
+            background-color: #4d4d5e;
+        }
+        .status-bar {
+            display: flex;
+            gap: 25px;
+            background: #2b2b36;
+            padding: 12px 24px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 15px;
+            align-items: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        .player-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .stone-icon {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .stone-black {
+            background: radial-gradient(circle at 30% 30%, #555, #000);
+            border: 1px solid #444;
+        }
+        .stone-white {
+            background: radial-gradient(circle at 30% 30%, #fff, #ccc);
+            border: 1px solid #999;
+        }
+        #turnIndicator {
+            font-weight: bold;
+            color: #4cd137;
+            min-width: 140px;
+            text-align: center;
+        }
+        .board-container {
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+            border-radius: 6px;
+            overflow: hidden;
+            background-color: #dcb35c;
+        }
+        canvas {
+            display: block;
+            cursor: pointer;
+        }
+        #messageBox {
+            margin-top: 15px;
+            font-size: 15px;
+            color: #fbc531;
+            min-height: 22px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>CỜ VÂY (GO)</h1>
+
+    <div class="controls">
+        <select id="modeSelect">
+            <option value="PvE" selected>Chơi với Máy (AI)</option>
+            <option value="PvP">2 Người chơi</option>
+        </select>
+
+        <select id="sizeSelect">
+            <option value="9" selected>Bàn 9x9</option>
+            <option value="13">Bàn 13x13</option>
+            <option value="19">Bàn 19x19</option>
+        </select>
+
+        <button onclick="resetGame()">Ván mới</button>
+        <button class="secondary" onclick="handlePass()">Bỏ lượt (Pass)</button>
+        <button class="secondary" onclick="calculateFinalScore()">Tính điểm</button>
+    </div>
+
+    <div class="status-bar">
+        <div class="player-info">
+            <span class="stone-icon stone-black"></span>
+            <span>Đen (Bạn): <b id="blackCaptures">0</b> quân bắt</span>
+        </div>
+        <div id="turnIndicator">Lượt: Đen</div>
+        <div class="player-info">
+            <span class="stone-icon stone-white"></span>
+            <span>Trắng (Máy): <b id="whiteCaptures">0</b> quân bắt</span>
+        </div>
+    </div>
+
+    <div class="board-container">
+        <canvas id="goBoard" width="540" height="540"></canvas>
+    </div>
+
+    <div id="messageBox"></div>
+
+<script>
+/**
+ * ==========================================
+ * 1. CLASS AI BOT (TRÍ TUỆ NHÂN TẠO CỜ VÂY)
+ * ==========================================
+ */
+class GoAI {
+    constructor(boardSize, aiColor = 2) {
+        this.size = boardSize;
+        this.aiColor = aiColor;
+        this.playerColor = aiColor === 1 ? 2 : 1;
+    }
+
+    getBestMove(board, koPoint = null, moveCount = 0) {
+        let bestScore = -Infinity;
+        let bestMoves = [];
+
+        // Giai đoạn khai cuộc (6 nước đầu): Ưu tiên chiếm các điểm Sao (Hoshi)
+        if (moveCount < 6) {
+            const starPoints = this.getStarPoints();
+            const availableStars = starPoints.filter(([sx, sy]) => board[sy][sx] === 0);
+            if (availableStars.length > 0 && Math.random() < 0.85) {
+                const pick = availableStars[Math.floor(Math.random() * availableStars.length)];
+                return { x: pick[0], y: pick[1] };
+            }
+        }
+
+        for (let y = 0; y < this.size; y++) {
+            for (let x = 0; x < this.size; x++) {
+                if (board[y][x] !== 0) continue;
+                if (koPoint && koPoint.x === x && koPoint.y === y) continue;
+
+                const evaluation = this.evaluateMove(board, x, y);
+                if (evaluation.valid) {
+                    if (evaluation.score > bestScore) {
+                        bestScore = evaluation.score;
+                        bestMoves = [{ x, y }];
+                    } else if (evaluation.score === bestScore) {
+                        bestMoves.push({ x, y });
+                    }
+                }
+            }
+        }
+
+        // Nếu không còn nước đi có lợi (điểm quá thấp), AI chọn Pass
+        if (bestMoves.length === 0 || bestScore < -40) {
+            return null;
+        }
+
+        const randomIndex = Math.floor(Math.random() * bestMoves.length);
+        return bestMoves[randomIndex];
+    }
+
+    evaluateMove(board, x, y) {
+        const tempBoard = board.map(row => [...row]);
+        tempBoard[y][x] = this.aiColor;
+
+        let score = 0;
+        let capturedStones = 0;
+
+        // 1. Kiểm tra ăn quân đối thủ & đánh Atari
+        const neighbors = this.getNeighbors(x, y);
+        for (const [nx, ny] of neighbors) {
+            if (tempBoard[ny][nx] === this.playerColor) {
+                const group = this.getGroupAndLiberties(tempBoard, nx, ny);
+                if (group.liberties === 0) {
+                    capturedStones += group.stones.length;
+                    for (const [sx, sy] of group.stones) {
+                        tempBoard[sy][sx] = 0;
+                    }
+                } else if (group.liberties === 1) {
+                    score += 40 * group.stones.length; // Dọa ăn quân (Atari)
+                }
+            }
+        }
+
+        score += capturedStones * 120;
+
+        // 2. Kiểm tra luật chống tự sát & khí của bản thân
+        const myGroup = this.getGroupAndLiberties(tempBoard, x, y);
+        if (myGroup.liberties === 0) {
+            return { valid: false, score: -Infinity };
+        }
+        if (myGroup.liberties === 1) {
+            score -= 75; // Tránh tự chui vào rọ
+        }
+
+        // 3. Cứu quân đồng minh đang bị Atari
+        for (const [nx, ny] of neighbors) {
+            if (board[ny][nx] === this.aiColor) {
+                const oldGroup = this.getGroupAndLiberties(board, nx, ny);
+                if (oldGroup.liberties === 1 && myGroup.liberties > 1) {
+                    score += 95 * oldGroup.stones.length;
+                }
+            }
+        }
+
+        // 4. Tránh tự lấp mắt thật của mình
+        if (this.isPotentialEye(board, x, y, this.aiColor)) {
+            score -= 100;
+        }
+
+        // 5. Khuyến khích nối quân hoặc tạo hình đẹp (chéo/nhảy cách 1 ô)
+        score += this.getShapeScore(board, x, y);
+
+        // 6. Điểm vị trí chiến lược (đường 3 và đường 4)
+        score += this.getPositionalScore(x, y);
+
+        // Nhiễu ngẫu nhiên nhẹ để lối đánh tự nhiên
+        score += Math.random() * 6;
+
+        return { valid: true, score };
+    }
+
+    getGroupAndLiberties(board, startX, startY) {
+        const color = board[startY][startX];
+        const visited = new Set();
+        const liberties = new Set();
+        const stones = [];
+        const queue = [[startX, startY]];
+        visited.add(`${startX},${startY}`);
+
+        while (queue.length > 0) {
+            const [cx, cy] = queue.shift();
+            stones.push([cx, cy]);
+
+            for (const [nx, ny] of this.getNeighbors(cx, cy)) {
+                const key = `${nx},${ny}`;
+                if (board[ny][nx] === 0) {
+                    liberties.add(key);
+                } else if (board[ny][nx] === color && !visited.has(key)) {
+                    visited.add(key);
+                    queue.push([nx, ny]);
+                }
+            }
+        }
+        return { stones, liberties: liberties.size };
+    }
+
+    getNeighbors(x, y) {
+        const dirs = [[0, 1], [1, 0], [0, -1], [-1, 0]];
+        const res = [];
+        for (const [dx, dy] of dirs) {
+            const nx = x + dx, ny = y + dy;
+            if (nx >= 0 && nx < this.size && ny >= 0 && ny < this.size) {
+                res.push([nx, ny]);
+            }
+        }
+        return res;
+    }
+
+    isPotentialEye(board, x, y, color) {
+        const neighbors = this.getNeighbors(x, y);
+        return neighbors.every(([nx, ny]) => board[ny][nx] === color);
+    }
+
+    getShapeScore(board, x, y) {
+        let bonus = 0;
+        // Kiểm tra quân chéo (Kosumi) hoặc nhảy 1 ô (Ikken-tobi)
+        const diagonals = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+        for (const [dx, dy] of diagonals) {
+            const nx = x + dx, ny = y + dy;
+            if (nx >= 0 && nx < this.size && ny >= 0 && ny < this.size) {
+                if (board[ny][nx] === this.aiColor) bonus += 8;
+                if (board[ny][nx] === this.playerColor) bonus += 5; // Áp sát đối thủ
+            }
+        }
+        return bonus;
+    }
+
+    getPositionalScore(x, y) {
+        const distX = Math.min(x, this.size - 1 - x);
+        const distY = Math.min(y, this.size - 1 - y);
+        if (distX === 0 || distY === 0) return -8;
+        if ((distX === 2 || distX === 3) && (distY === 2 || distY === 3)) return 16;
+        if (distX === 2 || distX === 3 || distY === 2 || distY === 3) return 9;
+        return 2;
+    }
+
+    getStarPoints() {
+        if (this.size === 9) return [[2, 2], [6, 2], [2, 6], [6, 6], [4, 4]];
+        if (this.size === 13) return [[3, 3], [9, 3], [3, 9], [9, 9], [6, 6]];
+        return [[3, 3], [9, 3], [15, 3], [3, 9], [9, 9], [15, 9], [3, 15], [9, 15], [15, 15]];
+    }
+}
+
+/**
+ * ==========================================
+ * 2. LOGIC BÀN CỜ & ĐIỀU KHIỂN GAME
+ * ==========================================
+ */
+const canvas = document.getElementById('goBoard');
+const ctx = canvas.getContext('2d');
+const turnIndicator = document.getElementById('turnIndicator');
+const messageBox = document.getElementById('messageBox');
+const blackCapEl = document.getElementById('blackCaptures');
+const whiteCapEl = document.getElementById('whiteCaptures');
+
+let BOARD_SIZE = 9;
+let CELL_SIZE = 0;
+let PADDING = 30;
+
+let board = [];
+let currentPlayer = 1; // 1 = Đen, 2 = Trắng
+let captures = { 1: 0, 2: 0 };
+let koPoint = null;
+let lastMove = null;
+let passCount = 0;
+let moveCount = 0;
+let gameOver = false;
+let isAiTurn = false;
+let gameMode = 'PvE';
+let aiBot = null;
+
+function initGame() {
+    BOARD_SIZE = parseInt(document.getElementById('sizeSelect').value);
+    gameMode = document.getElementById('modeSelect').value;
+
+    // Điều chỉnh kích thước canvas phù hợp màn hình
+    const maxCanvasSize = Math.min(window.innerWidth - 40, 560);
+    canvas.width = maxCanvasSize;
+    canvas.height = maxCanvasSize;
+    CELL_SIZE = (canvas.width - PADDING * 2) / (BOARD_SIZE - 1);
+
+    board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
+    currentPlayer = 1;
+    captures = { 1: 0, 2: 0 };
+    koPoint = null;
+    lastMove = null;
+    passCount = 0;
+    moveCount = 0;
+    gameOver = false;
+    isAiTurn = false;
+
+    aiBot = new GoAI(BOARD_SIZE, 2);
+    updateUI();
+    drawBoard();
+    setMessage(gameMode === 'PvE' ? "Bạn cầm quân Đen đi trước." : "Chế độ 2 người chơi. Đen đi trước.");
+}
+
+function resetGame() {
+    initGame();
+}
+
+document.getElementById('sizeSelect').addEventListener('change', resetGame);
+document.getElementById('modeSelect').addEventListener('change', resetGame);
+
+// Vẽ bàn cờ và quân cờ
+function drawBoard() {
+    // Nền gỗ
+    ctx.fillStyle = '#dcb35c';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Kẻ lưới
+    ctx.strokeStyle = '#3b2d18';
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < BOARD_SIZE; i++) {
+        const pos = PADDING + i * CELL_SIZE;
+        // Đường ngang
+        ctx.beginPath();
+        ctx.moveTo(PADDING, pos);
+        ctx.lineTo(canvas.width - PADDING, pos);
+        ctx.stroke();
+        // Đường dọc
+        ctx.beginPath();
+        ctx.moveTo(pos, PADDING);
+        ctx.lineTo(pos, canvas.height - PADDING);
+        ctx.stroke();
+    }
+
+    // Vẽ các điểm Sao (Hoshi)
+    const stars = aiBot.getStarPoints();
+    ctx.fillStyle = '#2b2010';
+    for (const [sx, sy] of stars) {
+        ctx.beginPath();
+        ctx.arc(PADDING + sx * CELL_SIZE, PADDING + sy * CELL_SIZE, 3.8, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Vẽ quân cờ
+    const stoneRadius = CELL_SIZE * 0.45;
+    for (let y = 0; y < BOARD_SIZE; y++) {
+        for (let x = 0; x < BOARD_SIZE; x++) {
+            if (board[y][x] !== 0) {
+                drawStone(x, y, board[y][x], stoneRadius);
+            }
+        }
+    }
+
+    // Đánh dấu nước đi cuối cùng
+    if (lastMove) {
+        const cx = PADDING + lastMove.x * CELL_SIZE;
+        const cy = PADDING + lastMove.y * CELL_SIZE;
+        ctx.strokeStyle = board[lastMove.y][lastMove.x] === 1 ? '#fff' : '#000';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, stoneRadius * 0.45, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    // Đánh dấu điểm cấm Ko (nếu có)
+    if (koPoint) {
+        const kx = PADDING + koPoint.x * CELL_SIZE;
+        const ky = PADDING + koPoint.y * CELL_SIZE;
+        ctx.strokeStyle = '#e84118';
+        ctx.lineWidth = 2;
+        const s = stoneRadius * 0.35;
+        ctx.strokeRect(kx - s, ky - s, s * 2, s * 2);
+    }
+}
+
+function drawStone(x, y, color, radius) {
+    const cx = PADDING + x * CELL_SIZE;
+    const cy = PADDING + y * CELL_SIZE;
+
+    // Đổ bóng
+    ctx.beginPath();
+    ctx.arc(cx + 2, cy + 2, radius, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.fill();
+
+    // Gradient tạo khối 3D cho quân cờ
+    const grad = ctx.createRadialGradient(
+        cx - radius * 0.3, cy - radius * 0.3, radius * 0.1,
+        cx, cy, radius
+    );
+    if (color === 1) {
+        grad.addColorStop(0, '#555');
+        grad.addColorStop(1, '#0a0a0a');
+    } else {
+        grad.addColorStop(0, '#ffffff');
+        grad.addColorStop(1, '#cccccc');
+    }
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+}
+
+// Xử lý đặt quân (bao gồm kiểm tra ăn quân, chống tự sát và luật Ko)
+function placeStone(x, y, player) {
+    if (gameOver) return false;
+    if (x < 0 || x >= BOARD_SIZE || y < 0 || y >= BOARD_SIZE) return false;
+    if (board[y][x] !== 0) return false;
+
+    if (koPoint && koPoint.x === x && koPoint.y === y) {
+        setMessage("Nước đi vi phạm luật Cướp cờ (Ko)!");
+        return false;
+    }
+
+    const opponent = player === 1 ? 2 : 1;
+    const tempBoard = board.map(row => [...row]);
+    tempBoard[y][x] = player;
+
+    let capturedStones = [];
+    const dirs = [[0, 1], [1, 0], [0, -1], [-1, 0]];
+
+    // Kiểm tra xem có ăn được quân đối thủ xung quanh không
+    for (const [dx, dy] of dirs) {
+        const nx = x + dx, ny = y + dy;
+        if (nx >= 0 && nx < BOARD_SIZE && ny >= 0 && ny < BOARD_SIZE) {
+            if (tempBoard[ny][nx] === opponent) {
+                const group = aiBot.getGroupAndLiberties(tempBoard, nx, ny);
+                if (group.liberties === 0) {
+                    capturedStones.push(...group.stones);
+                }
+            }
+        }
+    }
+
+    // Xóa các quân bị ăn khỏi bàn cờ giả lập
+    for (const [sx, sy] of capturedStones) {
+        tempBoard[sy][sx] = 0;
+    }
+
+    // Kiểm tra khí của chính nhóm quân vừa đặt (Luật chống tự sát)
+    const myGroup = aiBot.getGroupAndLiberties(tempBoard, x, y);
+    if (myGroup.liberties === 0) {
+        setMessage("Nước đi tự sát không hợp lệ!");
+        return false;
+    }
+
+    // Cập nhật luật Ko (nếu ăn đúng 1 quân và nhóm quân vừa đặt chỉ có đúng 1 quân & 1 khí)
+    if (capturedStones.length === 1 && myGroup.stones.length === 1 && myGroup.liberties === 1) {
+        koPoint = { x: capturedStones[0][0], y: capturedStones[0][1] };
+    } else {
+        koPoint = null;
+    }
+
+    // Áp dụng bàn cờ mới
+    board = tempBoard;
+    captures[player] += capturedStones.length;
+    lastMove = { x, y };
+    passCount = 0;
+    moveCount++;
+
+    currentPlayer = opponent;
+    updateUI();
+    drawBoard();
+    setMessage("");
+    return true;
+}
+
+// Xử lý sự kiện click của người chơi
+canvas.addEventListener('click', (e) => {
+    if (gameOver || isAiTurn) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    const x = Math.round((clickX - PADDING) / CELL_SIZE);
+    const y = Math.round((clickY - PADDING) / CELL_SIZE);
+
+    const moved = placeStone(x, y, currentPlayer);
+    if (moved && gameMode === 'PvE' && currentPlayer === 2 && !gameOver) {
+        triggerAiMove();
+    }
+});
+
+// Kích hoạt lượt đi của AI
+function triggerAiMove() {
+    isAiTurn = true;
+    turnIndicator.textContent = "Máy đang suy nghĩ...";
+    turnIndicator.style.color = "#fbc531";
+
+    setTimeout(() => {
+        const aiMove = aiBot.getBestMove(board, koPoint, moveCount);
+        if (aiMove) {
+            placeStone(aiMove.x, aiMove.y, 2);
+        } else {
+            handlePass(true);
+        }
+        isAiTurn = false;
+    }, 350);
+}
+
+// Xử lý bỏ lượt (Pass)
+function handlePass(isByAi = false) {
+    if (gameOver) return;
+    if (isAiTurn && !isByAi) return;
+
+    const who = currentPlayer === 1 ? "Đen" : "Trắng (Máy)";
+    passCount++;
+    koPoint = null;
+
+    if (passCount >= 2) {
+        gameOver = true;
+        setMessage("Cả hai bên đều bỏ lượt. Ván đấu kết thúc!");
+        calculateFinalScore();
+        return;
+    }
+
+    setMessage(`${who} đã bỏ lượt (Pass).`);
+    currentPlayer = currentPlayer === 1 ? 2 : 1;
+    updateUI();
+
+    if (gameMode === 'PvE' && currentPlayer === 2 && !isByAi) {
+        triggerAiMove();
+    }
+}
+
+// Tính điểm lãnh thổ + tù binh (Luật Nhật Bản cơ bản + Komi 6.5)
+function calculateFinalScore() {
+    const visited = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(false));
+    let blackTerritory = 0;
+    let whiteTerritory = 0;
+
+    for (let y = 0; y < BOARD_SIZE; y++) {
+        for (let x = 0; x < BOARD_SIZE; x++) {
+            if (board[y][x] === 0 && !visited[y][x]) {
+                const region = [];
+                const borders = new Set();
+                const queue = [[x, y]];
+                visited[y][x] = true;
+
+                while (queue.length > 0) {
+                    const [cx, cy] = queue.shift();
+                    region.push([cx, cy]);
+
+                    for (const [nx, ny] of aiBot.getNeighbors(cx, cy)) {
+                        if (board[ny][nx] === 0 && !visited[ny][nx]) {
+                            visited[ny][nx] = true;
+                            queue.push([nx, ny]);
+                        } else if (board[ny][nx] !== 0) {
+                            borders.add(board[ny][nx]);
+                        }
+                    }
+                }
+
+                // Nếu vùng trống chỉ tiếp xúc với 1 màu quân duy nhất -> Lãnh thổ của màu đó
+                if (borders.size === 1) {
+                    const owner = [...borders][0];
+                    if (owner === 1) blackTerritory += region.length;
+                    if (owner === 2) whiteTerritory += region.length;
+                }
+            }
+        }
+    }
+
+    const komi = 6.5;
+    const blackTotal = blackTerritory + captures[1];
+    const whiteTotal = whiteTerritory + captures[2] + komi;
+    const winner = blackTotal > whiteTotal ? "Đen (Bạn)" : "Trắng (Máy)";
+
+    setMessage(
+        `Kết quả: Đen ${blackTotal} điểm (Đất: ${blackTerritory} + Bắt: ${captures[1]}) | ` +
+        `Trắng ${whiteTotal} điểm (Đất: ${whiteTerritory} + Bắt: ${captures[2]} + Komi ${komi}) ➔ ${winner} thắng!`
+    );
+}
+
+function updateUI() {
+    blackCapEl.textContent = captures[1];
+    whiteCapEl.textContent = captures[2];
+    if (!gameOver) {
+        turnIndicator.textContent = currentPlayer === 1 ? "Lượt: Đen" : "Lượt: Trắng";
+        turnIndicator.style.color = currentPlayer === 1 ? "#4cd137" : "#00a8ff";
+    } else {
+        turnIndicator.textContent = "Kết thúc";
+        turnIndicator.style.color = "#e84118";
+    }
+}
+
+function setMessage(msg) {
+    messageBox.textContent = msg;
+}
+
+// Khởi chạy game lần đầu
+initGame();
+</script>
+</body>
+</html>
