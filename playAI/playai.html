@@ -22,7 +22,7 @@
         }
         .top-bar {
             width: 100%;
-            max-width: 560px;
+            max-width: 1000px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -116,6 +116,76 @@
             overflow: hidden;
             background-color: #dcb35c;
         }
+        .game-layout {
+            width: 100%;
+            max-width: 1000px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 18px;
+        }
+        .suggestion-panel {
+            flex: 0 1 360px;
+            min-width: 280px;
+            max-width: 360px;
+            padding: 18px;
+            background: #2b2b36;
+            border: 1px solid #444;
+            border-radius: 8px;
+            line-height: 1.55;
+        }
+        .suggestion-panel h2 {
+            margin-bottom: 10px;
+            color: #e6b87d;
+            font-size: 18px;
+        }
+        .suggestion-panel h3 {
+            margin: 14px 0 6px;
+            font-size: 14px;
+        }
+        .suggestion-move {
+            color: #8be9d1;
+            font-size: 17px;
+        }
+        #suggestionComparison,
+        #suggestionReasons,
+        .suggestion-note {
+            color: #dedee4;
+            font-size: 13px;
+        }
+        #suggestionEvaluation {
+            margin: 12px 0;
+            padding: 10px 12px;
+            border-left: 4px solid #888;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        #suggestionEvaluation[data-rating="best"] {
+            border-color: #4cd137;
+            background: rgba(76, 209, 55, 0.12);
+            color: #a8f09e;
+        }
+        #suggestionEvaluation[data-rating="good"] {
+            border-color: #e6b87d;
+            background: rgba(230, 184, 125, 0.12);
+            color: #f2d5ae;
+        }
+        #suggestionEvaluation[data-rating="bad"] {
+            border-color: #e84118;
+            background: rgba(232, 65, 24, 0.12);
+            color: #ff9a83;
+        }
+        #suggestionReasons {
+            padding-left: 20px;
+        }
+        #suggestionReasons li + li {
+            margin-top: 7px;
+        }
+        .suggestion-note {
+            margin-top: 12px;
+            color: #aaaab5;
+        }
         canvas {
             display: block;
             cursor: pointer;
@@ -127,6 +197,17 @@
             min-height: 22px;
             text-align: center;
             max-width: 560px;
+        }
+        @media (max-width: 900px) {
+            .game-layout {
+                flex-direction: column;
+                align-items: center;
+            }
+            .suggestion-panel {
+                width: 100%;
+                min-width: 0;
+                max-width: 560px;
+            }
         }
     </style>
 </head>
@@ -167,8 +248,23 @@
         </div>
     </div>
 
-    <div class="board-container">
-        <canvas id="goBoard" width="540" height="540"></canvas>
+    <div class="game-layout">
+        <div class="board-container">
+            <canvas id="goBoard" width="540" height="540"></canvas>
+        </div>
+
+        <aside class="suggestion-panel" aria-labelledby="suggestionTitle" aria-live="polite">
+            <h2 id="suggestionTitle">Nước đi tham khảo</h2>
+            <p id="suggestionStatus">Sau mỗi nước đi của bạn, KataGo sẽ phân tích một phương án khác để bạn tham khảo.</p>
+            <div id="suggestionDetails" hidden>
+                <p class="suggestion-move"><strong id="suggestionMove"></strong></p>
+                <p id="suggestionComparison"></p>
+                <p id="suggestionEvaluation" aria-live="polite"></p>
+                <h3>Vì sao nên cân nhắc?</h3>
+                <ul id="suggestionReasons"></ul>
+                <p class="suggestion-note">Nước mờ chỉ là giả lập, không làm thay đổi bàn cờ. Xếp loại dựa trên win rate ước tính của KataGo ở lượt phân tích này, không phải kết quả chắc chắn hay đáp án duy nhất.</p>
+            </div>
+        </aside>
     </div>
 
     <div id="messageBox"></div>
