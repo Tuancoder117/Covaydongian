@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cờ Vây Đơn Giản Lắm - Học Cờ Vây Dễ Hiểu Nhất</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <!DOCTYPE html>
+    <html lang="vi">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Cờ Vây Đơn Giản Lắm</title>
+        <link rel="stylesheet" href="css/style.css">
+        <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap"
+            rel="stylesheet">
+    </head>
+
+    <body>
+        <!-- Thanh điều hướng gọn nhẹ khi đã vào khu chức năng -->
+        <header class="topbar" id="topbar">
+            <div class="container topbar-inner">
+                <div class="brand" onclick="openHomeMenu()">
+                    <span class="dot black"></span>
+                    <span class="dot white"></span>
+                    <span>Cờ Vây Đơn Giản Lắm</span>
+                </div>
+                <div class="topbar-actions">
+                    <button class="chip-btn" onclick="openHomeMenu()">Menu chính</button>
+                    <button class="chip-btn" onclick="switchTab('learn')">Học luật</button>
+                    <button class="chip-btn" onclick="switchTab('tsumego')">Bài tập</button>
+                    <button class="chip-btn" onclick="switchTab('play-ai')">Đấu AI</button>
+                    <button class="chip-btn" onclick="switchTab('docs')">PDF</button>
+                </div>
+            </div>
+        </header>
+
+        <main class="container main-wrap">
+            <!-- MÀN HÌNH MENU CHÍNH KHI MỚI VÀO WEB -->
+            <section id="home-menu" class="home-menu active">
+                <!-- Khối 1: Banner xanh đậm giống mẫu -->
+                <div class="hero-card">
+                    <div class="hero-top">
+                        <div>
+                            <p class="greeting" id="time-greeting">Chào bạn</p>
+                            <h1 class="hero-title">Cờ Vây Đơn Giản Lắm</h1>
+                        </div>
+                        <button class="icon-gear" title="Tùy chọn" onclick="toggleQuickTip()">⚙</button>
+                    </div>
+
+                    <div class="hero-body">
+                        <div class="mini-board-box">
+                            <canvas id="menu-preview-board" width="140" height="140"></canvas>
+                        </div>
+
+                        <div class="hero-info">
+                            <span class="sub-label">HÀNH TRÌNH NHẬP MÔN</span>
+                            <div class="rank-line">Lộ trình 15 phút · Dễ hiểu</div>
+                            <div class="meta-line">9×9 · 5 bài cốt lõi · Thực hành ngay</div>
+
+                            <div class="hero-cta-row">
+                                <button class="btn-gold" onclick="switchTab('learn')">▶ Học ngay</button>
+                                <button class="link-ghost" onclick="switchTab('docs')">Tài liệu PDF &rsaquo;</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Khối 2: Buổi tập hôm nay -->
+                <div class="daily-card">
+                    <div class="progress-ring" id="daily-ring">
+                        <span id="daily-count">0/3</span>
+                    </div>
+                    <div class="daily-info">
+                        <div class="daily-title">Buổi tập hôm nay</div>
+                        <div class="daily-sub">Khởi động nhẹ · ~8 phút</div>
+                        <div class="tags-row">
+                            <span class="soft-tag">Người mới</span>
+                            <span class="soft-tag">Vừa sức</span>
+                        </div>
+                    </div>
+                    <button class="btn-forest" onclick="switchTab('startTodaySessionFromMenu')">Bắt đầu</button>
+                </div>
+
+                <!-- Khối 3: 2 thẻ tính năng bên dưới -->
+                <div class="feature-grid">
+                    <div class="tile-card tile-dark" onclick="switchTab('play-ai')">
+                        <div class="tile-icon-circle">◎</div>
+                        <div class="tile-title">Chơi với máy</div>
+                        <div class="tile-desc">Từ Tập sự đến nâng cao</div>
+                        <div class="level-bars">
+                            <span class="on"></span><span class="on"></span><span></span><span></span><span></span>
+                        </div>
+                    </div>
+
+                    <div class="tile-card tile-amber" onclick="switchTab('tsumego')">
+                        <span class="tile-badge">Sống chết</span>
+                        <div class="tile-icon-square">❖</div>
+                        <div class="tile-title">Bài tập</div>
+                        <div class="tile-desc">Hình cờ theo cấp độ</div>
+                        <div class="level-bars light">
+                            <span class="on"></span><span class="on"></span><span
+                                class="on"></span><span></span><span></span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- KHU VỰC LÀM VIỆC CỦA TỪNG MỤC -->
+            <section id="tab-learn" class="workspace-section">
+                <div class="panel-header-bar">
+                    <h2>1. Học Luật 15 Phút</h2>
+                    <button class="btn-back" onclick="openHomeMenu()">&larr; Về Menu</button>
+                </div>
+
+                <div class="workspace-grid">
+                    <div class="panel">
+                        <div class="lesson-steps" id="lesson-steps"></div>
+                        <div class="lesson-box">
+                            <span class="badge" id="lesson-badge">Bài 1 / 5</span>
+                            <h3 id="lesson-title">Đặt Quân & Khí</h3>
+                            <div id="lesson-desc" class="lesson-text"></div>
+                            <div id="lesson-feedback" class="feedback-box hidden"></div>
+                            <div class="lesson-actions">
+                                <button class="btn btn-sec" onclick="resetCurrentLesson()">Làm lại</button>
+                                <button class="btn btn-pri" id="btn-next-lesson" onclick="nextLesson()">Bài tiếp theo
+                                    &rarr;</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="board-toolbar">
+                            <span class="turn-pill" id="learn-status">Lượt: Quân Đen</span>
+                            <div class="captures-info">
+                                <span>Đen bắt: <strong id="black-captures">0</strong></span>
+                                <span>Trắng bắt: <strong id="white-captures">0</strong></span>
+                            </div>
+                        </div>
+                        <div class="canvas-wrapper">
+                            <canvas id="learn-board" width="500" height="500"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="tab-tsumego" class="workspace-section">
+            <div class="panel-header-bar">
+                <h2>2. Luyện Sống Chết & Hình Cờ</h2>
+                <button class="btn-back" onclick="openHomeMenu()">&larr; Về Menu</button>
+            </div>
+
+            <div class="tsumego-toolbar panel">
+                <div class="filter-group">
+                    <button class="tsumego-filter-btn active" data-level="all" onclick="tsumegoApp && tsumegoApp.setLevelFilter('all', this)">Tất cả</button>
+                    <button class="tsumego-filter-btn" data-level="30k-20k" onclick="tsumegoApp && tsumegoApp.setLevelFilter('30k-20k', this)">30k–20k</button>
+                    <button class="tsumego-filter-btn" data-level="19k-10k" onclick="tsumegoApp && tsumegoApp.setLevelFilter('19k-10k', this)">19k–10k</button>
+                    <button class="tsumego-filter-btn" data-level="9k-1d" onclick="tsumegoApp && tsumegoApp.setLevelFilter('9k-1d', this)">9k–1d</button>
+                </div>
+
+                <label class="btn-upload-sgf">
+                    Nạp file .SGF
+                    <input type="file" id="sgf-file-input" accept=".sgf" hidden>
+                </label>
+
+                <div class="sgf-import-group">
+                    <input type="text" id="sgf-url-input" class="sgf-url-input" placeholder="Dán link raw .sgf (VD: https://raw.githubusercontent.com/.../bai1.sgf)">
+                    <button type="button" class="btn btn-sec" onclick="tsumegoApp && tsumegoApp.importSGFFromUrl(document.getElementById('sgf-url-input').value)">Tải link</button>
+                </div>
+            </div>
+
+            <div class="workspace-grid">
+                <div class="panel">
+                    <div class="problem-list" id="tsumego-problem-list"></div>
+
+                    <div class="tsumego-detail">
+                        <div class="tsumego-meta-row">
+                            <span class="badge" id="tsumego-level-badge">30k – 20k</span>
+                            <span class="turn-pill" id="tsumego-turn">Lượt: Đen đi trước</span>
+                        </div>
+                        <h3 id="tsumego-title">Bắt quân góc trên trái</h3>
+                        <div id="tsumego-feedback" class="feedback-box hidden"></div>
+
+                        <div class="tsumego-actions">
+                            <button class="btn btn-sec" onclick="tsumegoApp && tsumegoApp.resetProblem()">Làm lại</button>
+                            <button class="btn btn-sec" onclick="tsumegoApp && tsumegoApp.showHint()">Gợi ý</button>
+                            <button class="btn btn-pri" onclick="tsumegoApp && tsumegoApp.showSolution()">Lời giải</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="canvas-wrapper">
+                        <canvas id="tsumego-board" width="480" height="480"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+            <section id="tab-play-ai" class="workspace-section">
+                <div class="panel-header-bar">
+                    <h2>3. Đấu Tập & Phân Tích AI</h2>
+                    <button class="btn-back" onclick="openHomeMenu()">&larr; Về Menu</button>
+                </div>
+                <div class="panel placeholder">Sẵn sàng cho Phần 4: Đấu bot & phân tích từng nước đi.</div>
+            </section>
+
+            <section id="tab-docs" class="workspace-section">
+                <div class="panel-header-bar">
+                    <h2>4. Tài Liệu & Giáo Trình PDF</h2>
+                    <button class="btn-back" onclick="openHomeMenu()">&larr; Về Menu</button>
+                </div>
+                <div class="panel placeholder">Sẵn sàng cho Phần 3: Đọc trực tiếp trên web & tải PDF.</div>
+            </section>
+        </main>
+
+        <script src="js/go-engine.js"></script>
+        <script src="js/tsumego.js"></script>
+        <script src="js/app.js"></script>
+        <script>
+            // Lời chào theo giờ + bàn cờ mini trang trí trên menu
+            const hr = new Date().getHours();
+            const greetEl = document.getElementById('time-greeting');
+            if (hr < 12) greetEl.textContent = 'Chào buổi sáng';
+            else if (hr < 18) greetEl.textContent = 'Chào buổi chiều';
+            else greetEl.textContent = 'Chào buổi tối';
+
+            const previewBoard = new GoBoardEngine('menu-preview-board', 9, { interactive: false });
+            previewBoard.loadPosition([
+                { x: 2, y: 2, color: 1 }, { x: 6, y: 2, color: 2 }, { x: 4, y: 4, color: 1 },
+                { x: 2, y: 6, color: 2 }, { x: 6, y: 6, color: 1 }, { x: 3, y: 4, color: 2 }, { x: 5, y: 4, color: 2 }
+            ]);
+
+            function openHomeMenu() {
+                document.querySelectorAll('.workspace-section').forEach(el => el.classList.remove('active'));
+                document.getElementById('home-menu').classList.add('active');
+            }
+
+            const _origSwitchTab = window.switchTab;
+            window.switchTab = function (tabName) {
+                document.getElementById('home-menu').classList.remove('active');
+                _origSwitchTab(tabName);
+            };
+
+            function toggleQuickTip() {
+                alert('Mẹo cho người mới: Bắt đầu với bàn 9x9, chú ý giữ khí cho quân và tạo 2 mắt để sống.');
+            }
+        </script>
+
+        <script>
+            window.addEventListener('DOMContentLoaded', () => {
+                if (typeof TsumegoModule !== 'undefined' && document.getElementById('tsumego-board')) {
+                    window.tsumegoApp = new TsumegoModule('tsumego-board');
+                }
+            });
+        </script>
+    </body>
+
+    </html>
+
+    
+</body>
+
+</html>
