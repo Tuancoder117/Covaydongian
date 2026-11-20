@@ -146,71 +146,75 @@ class TsumegoModule {
     }
 
     getDefaultProblems() {
+        const make = (id,title,level,label,turn,stones,sequence,hintText,description) => ({
+            id,title,level,levelLabel:label,size:9,turn,stones,sequence,hintText,description,
+            winMoves:sequence.map(s=>s.move),replies:{},
+            explanations:Object.fromEntries(sequence.map(s=>[s.move,s.explanation]))
+        });
         return [
-            {
-                id: 'p1',
-                title: 'Bắt quân góc trên trái',
-                level: '30k-20k',
-                levelLabel: '30k – 20k',
-                size: 9,
-                turn: 1,
-                hintText: 'Quân Trắng chỉ còn 1 khí ở sát mép trên.',
-                stones: [
-                    { x: 1, y: 1, color: 2 },
-                    { x: 0, y: 1, color: 1 },
-                    { x: 1, y: 2, color: 1 },
-                    { x: 2, y: 1, color: 1 }
-                ],
-                winMoves: ['1,0'],
-                replies: {},
-                explanations: {
-                    '1,0': 'Chính xác! Lấp khí cuối cùng bắt gọn quân Trắng.'
-                }
-            },
-            {
-                id: 'p2',
-                title: 'Tạo 2 mắt để sống',
-                level: '19k-10k',
-                levelLabel: '19k – 10k',
-                size: 9,
-                turn: 1,
-                hintText: 'Đi vào điểm giữa để chia vùng trống thành 2 mắt riêng biệt.',
-                stones: [
-                    { x: 0, y: 0, color: 1 }, { x: 1, y: 0, color: 1 }, { x: 2, y: 0, color: 1 }, { x: 3, y: 0, color: 1 },
-                    { x: 0, y: 1, color: 1 }, { x: 3, y: 1, color: 1 },
-                    { x: 0, y: 2, color: 1 }, { x: 1, y: 2, color: 1 }, { x: 2, y: 2, color: 1 }, { x: 3, y: 2, color: 1 },
-                    { x: 4, y: 0, color: 2 }, { x: 4, y: 1, color: 2 }, { x: 4, y: 2, color: 2 },
-                    { x: 0, y: 3, color: 2 }, { x: 1, y: 3, color: 2 }, { x: 2, y: 3, color: 2 }, { x: 3, y: 3, color: 2 }
-                ],
-                winMoves: ['1,1', '2,1'],
-                // Hai điểm mắt đều đã được Đen khống chế; Trắng không có nước đáp trả hợp lệ.
-                replies: {},
-                explanations: {
-                    '1,1': 'Đúng rồi! Nước này chia vùng trống thành hai mắt riêng biệt.',
-                    '2,1': 'Đúng rồi! Khối Đen đã có đủ hai mắt để sống.'
-                }
-            },
-            {
-                id: 'p3',
-                title: 'Phản kích cắt đứt',
-                level: '9k-1d',
-                levelLabel: '9k – 1d',
-                size: 9,
-                turn: 1,
-                hintText: 'Chặn ngay đường nối giữa hai quân Trắng ở khu vực trung tâm.',
-                stones: [
-                    { x: 3, y: 3, color: 2 }, { x: 5, y: 3, color: 2 },
-                    { x: 4, y: 2, color: 2 },
-                    { x: 4, y: 4, color: 1 }, { x: 3, y: 4, color: 1 }, { x: 5, y: 4, color: 1 }
-                ],
-                winMoves: ['4,3'],
-                replies: {
-                    '4,3': { x: 3, y: 2 }
-                },
-                explanations: {
-                    '4,3': 'Nước cắt chuẩn xác! Chia đôi thế liên kết của Trắng.'
-                }
-            }
+            make('begin-01','Bịt khí ở cạnh bàn','30k-20k','30k – 20k',1,
+                [{x:1,y:1,color:2},{x:0,y:1,color:1},{x:2,y:1,color:1}],
+                [{move:'1,0',reply:null,explanation:'Đen lấp khí cuối cùng và bắt quân Trắng.'}],
+                'Quân Trắng sát góc chỉ còn một khí.','Bài một nước: nhận biết khí cuối cùng.'),
+            make('begin-02','Nối hai quân Đen','30k-20k','30k – 20k',1,
+                [{x:2,y:4,color:1},{x:4,y:4,color:1},{x:3,y:3,color:2}],
+                [{move:'3,4',reply:{x:3,y:5},explanation:'Đen nối thành một nhóm. Máy áp sát từ phía dưới.'},
+                 {move:'2,5',reply:null,explanation:'Nước thứ hai giúp nhóm Đen mở rộng khí và giữ liên kết.'}],
+                'Tìm điểm nối trực tiếp giữa hai quân Đen.','Hai lượt người học, xen giữa là nước đáp trả của máy.'),
+            make('begin-03','Bắt quân trong góc','30k-20k','30k – 20k',1,
+                [{x:0,y:0,color:2},{x:1,y:0,color:1},{x:0,y:1,color:1},{x:2,y:1,color:2}],
+                [{move:'1,1',reply:{x:2,y:0},explanation:'Đen mở rộng thế bắt. Máy đặt quân chống đỡ.'},
+                 {move:'0,2',reply:null,explanation:'Đen tiếp tục khóa đường thoát ở cạnh.'}],
+                'Khóa đường chạy trước khi bắt quân.','Tập đọc đường thoát của nhóm quân ở góc.'),
+            make('begin-04','Giữ khí cho nhóm quân','30k-20k','30k – 20k',1,
+                [{x:3,y:3,color:1},{x:4,y:3,color:2},{x:3,y:4,color:2}],
+                [{move:'2,3',reply:{x:5,y:3},explanation:'Đen mở thêm một hướng thoát. Máy áp sát nhóm.'},
+                 {move:'2,4',reply:null,explanation:'Bạn đã nối rộng nhóm và tạo thêm khí.'}],
+                'Chọn điểm giúp nhóm Đen có thêm khí.','Thực hành tăng khí bằng cách nối quân.'),
+            make('mid-01','Tạo mắt trong vùng đất','19k-10k','19k – 10k',1,
+                [{x:2,y:2,color:1},{x:3,y:2,color:1},{x:2,y:3,color:1},{x:4,y:2,color:2}],
+                [{move:'3,3',reply:{x:4,y:3},explanation:'Đen chiếm điểm then chốt. Máy thử xâm nhập.'},
+                 {move:'2,4',reply:null,explanation:'Đen củng cố vùng đất và giữ khoảng trống làm mắt.'}],
+                'Điểm then chốt nằm sát nhóm Đen.','Bài hai nước: chiếm điểm sống còn rồi củng cố.'),
+            make('mid-02','Chặn đường chạy của quân Trắng','19k-10k','19k – 10k',1,
+                [{x:4,y:2,color:2},{x:3,y:2,color:1},{x:5,y:2,color:1},{x:4,y:3,color:2}],
+                [{move:'3,3',reply:{x:5,y:3},explanation:'Đen chặn một hướng thoát. Máy tìm đường phía còn lại.'},
+                 {move:'4,4',reply:null,explanation:'Nước thứ hai khóa đường chạy còn lại.'}],
+                'Tính trước hai hướng chạy của quân Trắng.','Tập đọc đường chạy và chặn theo thứ tự.'),
+            make('mid-03','Nối nhóm trước khi bị cắt','19k-10k','19k – 10k',2,
+                [{x:2,y:4,color:2},{x:4,y:4,color:2},{x:3,y:3,color:1}],
+                [{move:'3,4',reply:{x:3,y:5},explanation:'Trắng nối hai nhóm. Máy thử cắt từ phía dưới.'},
+                 {move:'2,5',reply:null,explanation:'Trắng gia cố liên kết và giữ nhóm an toàn.'}],
+                'Bạn cầm Trắng. Hãy nối hai nhóm trước khi Đen cắt.','Bài hai nước dành cho bên Trắng.'),
+            make('mid-04','Đánh vào điểm yếu','19k-10k','19k – 10k',1,
+                [{x:3,y:3,color:2},{x:4,y:3,color:2},{x:5,y:4,color:1},{x:4,y:5,color:1}],
+                [{move:'4,4',reply:{x:3,y:4},explanation:'Đen đánh vào điểm yếu giữa hai quân Trắng. Máy tìm cách nối.'},
+                 {move:'5,3',reply:null,explanation:'Nước thứ hai tiếp tục tách nhóm Trắng và tạo áp lực.'}],
+                'Tìm điểm cắt khiến hai quân Trắng khó hỗ trợ nhau.','Tập chiến thuật cắt và gây áp lực.'),
+            make('adv-01','Đọc trước ba nước khi tấn công','9k-1d','9k – 1d',1,
+                [{x:3,y:3,color:2},{x:4,y:3,color:2},{x:5,y:3,color:2},{x:3,y:4,color:1},{x:5,y:4,color:1}],
+                [{move:'4,4',reply:{x:4,y:5},explanation:'Nước đầu tiên ép nhóm Trắng xuống. Máy đáp trả.'},
+                 {move:'3,5',reply:{x:5,y:5},explanation:'Đen khóa cánh trái; máy tìm cách mở cánh phải.'},
+                 {move:'4,6',reply:null,explanation:'Đen khép vùng vây và duy trì áp lực.'}],
+                'Tính hướng chạy sau mỗi lần đối thủ đáp trả.','Bài ba nước: tấn công theo hướng và giữ thế vây.'),
+            make('adv-02','Cắt và ép nhóm quân','9k-1d','9k – 1d',1,
+                [{x:2,y:3,color:2},{x:3,y:3,color:2},{x:5,y:3,color:2},{x:4,y:2,color:1},{x:4,y:4,color:1}],
+                [{move:'4,3',reply:{x:3,y:4},explanation:'Đen cắt đôi hình cờ. Máy nối về phía trái.'},
+                 {move:'5,4',reply:{x:6,y:3},explanation:'Đen gây sức ép lên nhóm bên phải. Máy tìm đường thoát.'},
+                 {move:'6,4',reply:null,explanation:'Nước thứ ba khóa hướng chạy và hoàn tất chuỗi chiến thuật.'}],
+                'Tìm nước cắt trước, sau đó ép nhóm yếu chạy về phía bất lợi.','Bài ba nước: cắt, đuổi và khóa đường chạy.'),
+            make('adv-03','Tạo mắt giả rồi phá thế','9k-1d','9k – 1d',2,
+                [{x:2,y:2,color:1},{x:3,y:2,color:1},{x:4,y:2,color:1},{x:2,y:3,color:1},{x:4,y:3,color:1},{x:3,y:4,color:2}],
+                [{move:'3,3',reply:{x:1,y:3},explanation:'Trắng chiếm điểm then chốt trong hình. Máy mở rộng biên.'},
+                 {move:'2,4',reply:{x:4,y:4},explanation:'Trắng giữ liên kết và thu hẹp mắt giả. Máy chống đỡ.'},
+                 {move:'3,5',reply:null,explanation:'Trắng đọc đủ chuỗi nước để phá thế phòng thủ.'}],
+                'Bạn cầm Trắng. Chiếm điểm then chốt rồi thu hẹp không gian sống.','Bài ba nước dành cho người chơi muốn đọc sâu.'),
+            make('adv-04','Vây bắt bằng thứ tự chính xác','9k-1d','9k – 1d',1,
+                [{x:3,y:2,color:2},{x:4,y:2,color:2},{x:5,y:2,color:2},{x:3,y:3,color:1},{x:5,y:3,color:1},{x:4,y:4,color:2}],
+                [{move:'4,3',reply:{x:2,y:3},explanation:'Đen đặt nước chặn đầu. Máy thử mở đường cánh trái.'},
+                 {move:'6,3',reply:{x:6,y:2},explanation:'Đen khép cánh phải. Máy tìm cách thoát lên trên.'},
+                 {move:'6,4',reply:null,explanation:'Nước cuối khóa đường thoát và hoàn tất thế vây.'}],
+                'Tính đường chạy của nhóm Trắng và chặn các cửa theo đúng thứ tự.','Bài ba nước: đọc hướng chạy trước khi vây bắt.')
         ];
     }
 
@@ -274,6 +278,7 @@ class TsumegoModule {
         const prob = this.problems.find(item => item.id === id);
         if (!prob) return;
         this.currentProblem = prob;
+        this.currentStepIndex = 0;
         this.isBotThinking = false;
 
         if (this.board.size !== prob.size) {
@@ -291,6 +296,7 @@ class TsumegoModule {
 
         this.clearFeedback();
         this.renderProblemList();
+        if (prob.description) this.setFeedback(prob.description, 'info');
     }
 
     resetProblem() {
@@ -323,46 +329,57 @@ class TsumegoModule {
 
     handlePlayerMove(move) {
         if (!this.currentProblem || this.isBotThinking) return;
-
+        if (!Array.isArray(this.currentProblem.sequence)) {
+            this.currentProblem.sequence = (this.currentProblem.winMoves || []).map(key => ({
+                move:key, reply:this.currentProblem.replies?.[key] || null,
+                explanation:this.currentProblem.explanations?.[key] || 'Nước đi chính xác!'
+            }));
+        }
+        if (this.currentStepIndex == null) this.currentStepIndex = 0;
+        const step = this.currentProblem.sequence[this.currentStepIndex];
         const key = `${move.x},${move.y}`;
-        const isCorrect = this.currentProblem.winMoves.includes(key);
-
-        if (!isCorrect) {
-            this.setFeedback('Nước đi này chưa chính xác. Thử lại nhé!', 'error');
+        if (!step || key !== step.move) {
+            this.setFeedback('Nước đi chưa đúng ở bước này. Hãy thử lại nhé!', 'error');
             this.isBotThinking = true;
             setTimeout(() => {
                 this.isBotThinking = false;
                 this.selectProblem(this.currentProblem.id);
-            }, 700);
+            }, 800);
             return;
         }
-
         this.board.markers = [];
         this.board.draw();
-
-        const explanation = this.currentProblem.explanations[key] || 'Nước đi chính xác!';
-        this.solvedIds.add(this.currentProblem.id);
-        try {
-            localStorage.setItem('cvdgl_solved_tsumego', JSON.stringify([...this.solvedIds]));
-        } catch (error) {
-            // Không để lỗi lưu tiến độ làm gián đoạn bài tập.
-        }
-        this.syncDailyProgress();
-        this.renderProblemList();
-
-        const botReply = this.currentProblem.replies[key];
-        if (botReply) {
+        const explanation = step.explanation || 'Nước đi chính xác!';
+        const nextIndex = this.currentStepIndex + 1;
+        const advance = () => {
+            this.currentStepIndex = nextIndex;
+            if (nextIndex >= this.currentProblem.sequence.length) {
+                this.solvedIds.add(this.currentProblem.id);
+                try { localStorage.setItem('cvdgl_solved_tsumego', JSON.stringify([...this.solvedIds])); } catch (e) {}
+                this.syncDailyProgress();
+                this.renderProblemList();
+                this.setFeedback(`${explanation} Hoàn thành toàn bộ ${this.currentProblem.sequence.length} nước!`, 'success');
+            } else {
+                this.setFeedback(`${explanation} Đến lượt bạn tìm nước thứ ${nextIndex + 1}/${this.currentProblem.sequence.length}.`, 'info');
+            }
+        };
+        if (step.reply) {
             this.isBotThinking = true;
-            this.setFeedback(`${explanation} Đối thủ đang đáp trả...`, 'success');
+            this.setFeedback(`${explanation} Máy đang đáp trả...`, 'success');
             setTimeout(() => {
-                const oppColor = this.currentProblem.turn === 1 ? 2 : 1;
-                this.board.playMove(botReply.x, botReply.y, oppColor);
+                const opponent = this.currentProblem.turn === 1 ? 2 : 1;
+                const result = this.board.playMove(step.reply.x, step.reply.y, opponent);
+                if (!result.valid) {
+                    this.isBotThinking = false;
+                    this.setFeedback('Nước đáp trả của máy trong dữ liệu bài tập không hợp lệ. Cần hiệu chỉnh bài này.', 'error');
+                    return;
+                }
                 this.board.currentPlayer = this.currentProblem.turn;
                 this.isBotThinking = false;
-                this.setFeedback(`${explanation} Bạn đã hoàn thành hình cờ này!`, 'success');
-            }, 450);
+                advance();
+            }, 500);
         } else {
-            this.setFeedback(`${explanation} Bạn đã hoàn thành bài tập!`, 'success');
+            advance();
         }
     }
 
