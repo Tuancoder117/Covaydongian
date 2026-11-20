@@ -65,6 +65,7 @@ class TsumegoEditor {
         if (!this.panel.hidden) {
             this.custom = this.readCustom();
             this.refreshSelect();
+            this.attachToApp();
             this.draw();
             this.panel.scrollIntoView({behavior:'smooth',block:'start'});
         }
@@ -126,11 +127,10 @@ class TsumegoEditor {
     }
     attachToApp() {
         if(typeof initTsumegoIfNeeded==='function')initTsumegoIfNeeded();
-        if(!window.tsumegoApp)return;
-        const defaults=window.tsumegoApp.problems.filter(p=>!String(p.id).startsWith('custom-'));
-        window.tsumegoApp.problems=[...defaults,...this.custom];
-        window.tsumegoApp.currentLevelFilter='all';window.tsumegoApp.syncFilterButtons();window.tsumegoApp.renderProblemList();
-        const saved=this.custom[this.custom.length-1];if(saved)window.tsumegoApp.selectProblem(saved.id);
+        if(typeof tsumegoApp==='undefined'||!tsumegoApp)return;
+        const defaults=tsumegoApp.problems.filter(p=>!String(p.id).startsWith('custom-'));
+        tsumegoApp.problems=[...defaults,...this.custom];
+        tsumegoApp.currentLevelFilter='all';tsumegoApp.syncFilterButtons();tsumegoApp.renderProblemList();
     }
     refreshSelect() {
         const el=document.getElementById('editor-edit-select');el.innerHTML='<option value="">— Chọn bài tự tạo để sửa —</option>';
