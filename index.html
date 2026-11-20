@@ -157,6 +157,7 @@
                     <input type="file" id="sgf-file-input" accept=".sgf" hidden>
                 </label>
 
+                <button type="button" class="btn btn-pri" onclick="tsumegoEditor && tsumegoEditor.toggle()">✎ Tự tạo / sửa bài</button>
                 <div class="sgf-import-group">
                     <input type="text" id="sgf-url-input" class="sgf-url-input" placeholder="Dán link raw .sgf (VD: https://raw.githubusercontent.com/.../bai1.sgf)">
                     <button type="button" class="btn btn-sec" onclick="tsumegoApp && tsumegoApp.importSGFFromUrl(document.getElementById('sgf-url-input').value)">Tải link</button>
