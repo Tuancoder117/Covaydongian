@@ -11,19 +11,6 @@
 </head>
 
 <body>
-    <!DOCTYPE html>
-    <html lang="vi">
-
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Cờ Vây Đơn Giản Lắm</title>
-        <link rel="stylesheet" href="css/style.css">
-        <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap"
-            rel="stylesheet">
-    </head>
-
-    <body>
         <!-- Thanh điều hướng gọn nhẹ khi đã vào khu chức năng -->
         <header class="topbar" id="topbar">
             <div class="container topbar-inner">
@@ -86,7 +73,7 @@
                             <span class="soft-tag">Vừa sức</span>
                         </div>
                     </div>
-                    <button class="btn-forest" onclick="switchTab('startTodaySessionFromMenu')">Bắt đầu</button>
+                    <button class="btn-forest" onclick="startTodaySessionFromMenu()">Bắt đầu</button>
                 </div>
 
                 <!-- Khối 3: 2 thẻ tính năng bên dưới -->
@@ -254,18 +241,5 @@
             }
         </script>
 
-        <script>
-            window.addEventListener('DOMContentLoaded', () => {
-                if (typeof TsumegoModule !== 'undefined' && document.getElementById('tsumego-board')) {
-                    window.tsumegoApp = new TsumegoModule('tsumego-board');
-                }
-            });
-        </script>
-    </body>
-
-    </html>
-
-    
 </body>
-
 </html>
