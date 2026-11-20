@@ -183,13 +183,11 @@ class TsumegoModule {
                     { x: 0, y: 3, color: 2 }, { x: 1, y: 3, color: 2 }, { x: 2, y: 3, color: 2 }, { x: 3, y: 3, color: 2 }
                 ],
                 winMoves: ['1,1', '2,1'],
-                replies: {
-                    '1,1': { x: 2, y: 1 },
-                    '2,1': { x: 1, y: 1 }
-                },
+                // Hai điểm mắt đều đã được Đen khống chế; Trắng không có nước đáp trả hợp lệ.
+                replies: {},
                 explanations: {
-                    '1,1': 'Đúng rồi! Dù Trắng đánh vào ô còn lại, khối Đen vẫn có đủ 2 mắt.',
-                    '2,1': 'Đúng rồi! Khối Đen đã tách thành 2 mắt an toàn.'
+                    '1,1': 'Đúng rồi! Nước này chia vùng trống thành hai mắt riêng biệt.',
+                    '2,1': 'Đúng rồi! Khối Đen đã có đủ hai mắt để sống.'
                 }
             },
             {
