@@ -1034,3 +1034,25 @@ canvas {
         grid-template-columns: minmax(0, 1fr);
     }
 }
+
+
+/* Trình biên tập thế cờ */
+.tsumego-editor { margin: 0 0 18px; }
+.tsumego-editor[hidden] { display: none !important; }
+.editor-heading { display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:18px; }
+.editor-heading p { color:var(--text-muted);font-size:.9rem;margin-top:4px; }
+.editor-layout { display:grid;grid-template-columns:minmax(0,1.1fr) minmax(280px,.9fr);gap:22px;align-items:start; }
+.editor-board-wrap { background:#e8b976;padding:8px;border-radius:12px;display:flex;justify-content:center; }
+#tsumego-editor-board { width:100%;max-width:480px;height:auto;aspect-ratio:1/1;cursor:crosshair; }
+.editor-controls { display:flex;flex-direction:column;gap:10px;min-width:0; }
+.editor-controls label { display:flex;flex-direction:column;gap:5px;font-size:.86rem;font-weight:600; }
+.editor-controls input[type="text"],.editor-controls select,.editor-controls textarea { width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:9px;font:inherit;font-weight:400;background:#fff;color:var(--text-main); }
+.editor-fields { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
+.editor-button-row { display:flex;gap:7px;flex-wrap:wrap;align-items:center; }
+.editor-button-row .btn { padding:8px 11px;font-size:.82rem; }
+.editor-button-row .active { background:var(--forest);color:#fff; }
+.editor-check { display:flex!important;flex-direction:row!important;align-items:center;gap:6px!important;font-weight:500!important; }
+.editor-import { display:inline-flex!important;justify-content:center;cursor:pointer; }
+.editor-status { margin-top:10px;padding:9px 11px;background:#eef6f2;border-radius:8px;font-size:.85rem;font-weight:600; }
+.editor-sequence { margin-top:8px;color:var(--text-muted);font-size:.82rem;line-height:1.6;overflow-wrap:anywhere; }
+@media(max-width:900px){.editor-layout{grid-template-columns:1fr;}}
